@@ -1,0 +1,75 @@
+{
+  "name": "morrow-calendar",
+  "productName": "朝暮",
+  "version": "1.0.0",
+  "description": "朝暮 · Morrow：参考 macOS 日历设计的 Windows 桌面日历，带四种可拖拽桌面小组件",
+  "main": "main.js",
+  "private": true,
+  "author": "yaolongda",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "set CALENDAR_SMOKE=1&& electron .",
+    "test": "node tools/e2e.js",
+    "test:widgets": "node tools/widget-restart-test.js",
+    "build:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_portable.ps1",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "keywords": [
+    "calendar",
+    "electron",
+    "widgets",
+    "morrow"
+  ],
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.yaolongda.morrow",
+    "productName": "朝暮",
+    "copyright": "Copyright © 2026 yaolongda",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "seed.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "朝暮-Morrow-Setup-${version}.${ext}",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "朝暮",
+      "uninstallDisplayName": "朝暮 Morrow",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "language": "2052"
+    }
+  }
+}

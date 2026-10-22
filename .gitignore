@@ -1,0 +1,19 @@
+node_modules/
+dist/
+release/
+screenshots/
+.smoke-data/
+.e2e-data/
+.widget-persist-data/
+.portable-test/
+
+# Local shortcuts and launchers
+*.lnk
+*.bat
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+*.log
