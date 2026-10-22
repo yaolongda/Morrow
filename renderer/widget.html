@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>朝暮小组件</title>
+  <link rel="stylesheet" href="widget.css" />
+</head>
+<body>
+  <div class="widget-shell">
+    <div class="widget-card" id="widget-card">
+      <div class="widget-controls">
+        <button class="widget-control" id="pin-btn" title="固定在其它窗口上方" aria-label="固定小组件">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9.2 3.8h5.6l-.7 5.3 3 2.8v1.2H6.9v-1.2l3-2.8-.7-5.3Z" />
+            <path d="M12 13.1V20.5" />
+          </svg>
+        </button>
+        <button class="widget-control" id="close-btn" title="关闭小组件" aria-label="关闭小组件">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <div class="widget-content" id="widget-content"></div>
+    </div>
+  </div>
+  <script src="widget.js"></script>
+</body>
+</html>

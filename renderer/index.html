@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>朝暮</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="titlebar">
+      <div class="tb-left">
+        <button class="icon-btn" id="sidebar-toggle" title="显示或隐藏边栏" aria-label="显示或隐藏边栏">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.8" />
+            <path d="M9.2 4.5v15" />
+          </svg>
+        </button>
+        <button class="today-btn" id="today-btn" title="回到今天 (T)">今天</button>
+        <div class="nav-cluster">
+          <button class="icon-btn nav-btn" id="prev-btn" title="上一个" aria-label="上一个">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" /></svg>
+          </button>
+          <button class="icon-btn nav-btn" id="next-btn" title="下一个" aria-label="下一个">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5" /></svg>
+          </button>
+        </div>
+        <h1 class="view-title" id="view-title">日历</h1>
+      </div>
+
+      <div class="tb-right">
+        <div class="segmented" id="view-switch" role="tablist" aria-label="视图">
+          <button data-view="day" role="tab">日</button>
+          <button data-view="week" role="tab">周</button>
+          <button data-view="month" role="tab" class="active">月</button>
+          <button data-view="year" role="tab">年</button>
+        </div>
+
+        <button class="icon-btn widgets-btn" id="widgets-btn" title="桌面小组件" aria-label="桌面小组件">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="7" height="7" rx="2" />
+            <rect x="13.5" y="3.5" width="7" height="7" rx="2" />
+            <rect x="3.5" y="13.5" width="7" height="7" rx="2" />
+            <rect x="13.5" y="13.5" width="7" height="7" rx="2" />
+          </svg>
+        </button>
+
+        <button class="icon-btn" id="more-btn" title="更多" aria-label="更多" aria-haspopup="menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="5.6" cy="12" r="1.5" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+            <circle cx="18.4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <div class="search-box" id="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.8" cy="10.8" r="6.3" />
+            <path d="m15.6 15.6 4.2 4.2" />
+          </svg>
+          <input
+            id="search-input"
+            type="text"
+            placeholder="搜索"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="搜索日程"
+          />
+          <div class="search-results hidden" id="search-results"></div>
+        </div>
+
+        <button class="add-btn" id="add-btn" title="新建日程 (Ctrl+N)" aria-label="新建日程">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand-head">
+          <span class="brand-cn">朝暮</span>
+          <span class="brand-en">MORROW</span>
+        </div>
+
+        <section class="mini-calendar">
+          <div class="mini-head">
+            <span class="mini-title" id="mini-title">2026年10月</span>
+            <div class="mini-nav">
+              <button class="mini-nav-btn" id="mini-prev" aria-label="上个月">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" /></svg>
+              </button>
+              <button class="mini-nav-btn" id="mini-next" aria-label="下个月">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5" /></svg>
+              </button>
+            </div>
+          </div>
+          <div class="mini-weekdays" id="mini-weekdays"></div>
+          <div class="mini-grid" id="mini-grid"></div>
+        </section>
+
+        <section class="calendar-section">
+          <div class="section-head">
+            <span>我的日历</span>
+            <button class="section-add" id="add-calendar-btn" title="新建日历" aria-label="新建日历">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </div>
+          <div class="calendar-list" id="calendar-list"></div>
+        </section>
+
+        <footer class="sidebar-footer">
+          <span class="local-dot"></span>
+          <span>日程仅保存在本机</span>
+        </footer>
+      </aside>
+
+      <main class="main-view" id="main-view" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <!-- 日程编辑 -->
+  <div class="overlay hidden" id="event-overlay">
+    <div class="dialog event-dialog" role="dialog" aria-modal="true" aria-labelledby="event-dialog-title">
+      <div class="dialog-top">
+        <button class="text-btn" id="event-cancel">取消</button>
+        <span class="dialog-heading" id="event-dialog-title">新建日程</span>
+        <button class="primary-btn" id="event-save">完成</button>
+      </div>
+      <div class="event-body">
+        <input
+          class="title-input"
+          id="event-title"
+          maxlength="140"
+          placeholder="添加标题"
+          autocomplete="off"
+        />
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.4" />
+            <path d="M12 7.8V12l2.8 1.7" />
+          </svg>
+          <div class="field-content">
+            <label class="switch-line">
+              <span class="switch">
+                <input type="checkbox" id="event-allday" />
+                <span class="switch-track"></span>
+              </span>
+              <span>全天</span>
+            </label>
+            <div class="date-lines" id="date-line">
+              <div class="date-line">
+                <span class="date-label">开始</span>
+                <input type="date" id="event-start-date" aria-label="开始日期" />
+                <input type="time" id="event-start-time" aria-label="开始时间" />
+              </div>
+              <div class="date-line">
+                <span class="date-label">结束</span>
+                <input type="date" id="event-end-date" aria-label="结束日期" />
+                <input type="time" id="event-end-time" aria-label="结束时间" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.4" y="5" width="17.2" height="15.4" rx="3" />
+            <path d="M8 3.4v3.4M16 3.4v3.4M3.8 9.4h16.4" />
+          </svg>
+          <div class="field-content calendar-select-line">
+            <span class="select-dot" id="event-calendar-dot"></span>
+            <select id="event-calendar" aria-label="日历"></select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 21s6.2-5.3 6.2-10A6.2 6.2 0 0 0 5.8 11c0 4.7 6.2 10 6.2 10Z" />
+            <circle cx="12" cy="10.8" r="2.2" />
+          </svg>
+          <input class="field-input" id="event-location" maxlength="120" placeholder="添加地点" autocomplete="off" />
+        </div>
+
+        <div class="field-row notes-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 4.6h14M5 9.4h14M5 14.2h14M5 19h9" />
+          </svg>
+          <textarea
+            class="field-input notes-input"
+            id="event-notes"
+            rows="3"
+            maxlength="2000"
+            placeholder="添加备注"
+          ></textarea>
+        </div>
+      </div>
+      <div class="event-footer">
+        <button class="danger-link hidden" id="event-delete">删除日程</button>
+        <span class="save-hint">Ctrl + Enter 保存</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新建 / 重命名日历 -->
+  <div class="overlay hidden" id="calendar-overlay">
+    <div class="dialog compact-dialog" role="dialog" aria-modal="true">
+      <div class="dialog-top">
+        <button class="text-btn" id="calendar-cancel">取消</button>
+        <span class="dialog-heading" id="calendar-dialog-title">新建日历</span>
+        <button class="primary-btn" id="calendar-save">添加</button>
+      </div>
+      <div class="compact-body">
+        <label class="compact-label" for="calendar-name">名称</label>
+        <input class="compact-input" id="calendar-name" maxlength="30" placeholder="例如：学习计划" autocomplete="off" />
+        <span class="compact-label">颜色</span>
+        <div class="swatches" id="calendar-swatches"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 确认 -->
+  <div class="overlay hidden" id="confirm-overlay">
+    <div class="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h3 id="confirm-title">删除日历？</h3>
+      <p id="confirm-text"></p>
+      <div class="confirm-actions">
+        <button class="text-btn" id="confirm-cancel">取消</button>
+        <button class="danger-btn" id="confirm-ok">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 小组件中心 -->
+  <div class="overlay hidden" id="widget-overlay">
+    <div class="dialog widgets-dialog" role="dialog" aria-modal="true" aria-labelledby="widgets-title">
+      <div class="dialog-top">
+        <span class="dialog-top-spacer"></span>
+        <span class="dialog-heading" id="widgets-title">桌面小组件</span>
+        <button class="icon-btn dialog-close" id="widget-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <p class="widget-intro">把日历放到桌面上。拖动小组件可任意摆放，悬停时还能固定在最前或关闭。</p>
+      <div class="widget-gallery" id="widget-gallery"></div>
+      <p class="widget-tip">提示：小组件与主日历实时同步，修改后无需手动刷新。</p>
+    </div>
+  </div>
+
+  <div class="context-menu hidden" id="calendar-menu">
+    <button data-action="rename">重命名日历…</button>
+    <button data-action="delete" class="menu-danger">删除日历…</button>
+  </div>
+
+  <div class="context-menu app-menu hidden" id="app-menu" role="menu">
+    <button data-action="export-config" role="menuitem">导出配置…</button>
+    <button data-action="import-config" role="menuitem">导入配置…</button>
+    <div class="menu-separator"></div>
+    <button data-action="open-data" role="menuitem">打开数据文件夹</button>
+    <div class="menu-separator"></div>
+    <button data-action="quit-app" class="menu-danger" role="menuitem">退出朝暮</button>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

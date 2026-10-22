@@ -1,0 +1,710 @@
+:root {
+  --text: #1d1d1f;
+  --text-2: #77757d;
+  --text-3: #9a98a0;
+  --accent: #ff3b30;
+  --blue: #007aff;
+  --font: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC",
+    "Hiragino Sans GB", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.widget-shell {
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+}
+
+.widget-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 22px;
+  background: linear-gradient(165deg, #ffffff 0%, #faf8fb 100%);
+  box-shadow: 0 3px 14px rgba(18, 12, 26, 0.2), 0 1px 4px rgba(18, 12, 26, 0.1),
+    0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  -webkit-app-region: drag;
+  animation: widget-in 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes widget-in {
+  from {
+    opacity: 0;
+    transform: scale(0.965) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+body[data-type="today"] .widget-card {
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgba(255, 214, 205, 0.85) 0%, rgba(255, 244, 241, 0) 60%),
+    linear-gradient(165deg, #ffffff 0%, #fffaf9 100%);
+}
+
+body[data-type="upcoming"] .widget-card {
+  background:
+    radial-gradient(120% 130% at 0% 0%, rgba(224, 236, 255, 0.6) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(165deg, #ffffff 0%, #fbfafc 100%);
+}
+
+body[data-type="monthAgenda"] .widget-card {
+  background:
+    radial-gradient(100% 80% at 0% 0%, rgba(255, 236, 230, 0.48) 0%, rgba(255, 255, 255, 0) 50%),
+    linear-gradient(165deg, #ffffff 0%, #faf9fb 100%);
+}
+
+.widget-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 17px 19px 15px;
+}
+
+/* 悬停控制 */
+
+.widget-controls {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.widget-card:hover .widget-controls {
+  opacity: 1;
+}
+
+.widget-control {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.13), inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  color: #6d6b73;
+  backdrop-filter: blur(8px);
+  transition: background 0.12s ease, color 0.12s ease, transform 0.1s ease;
+}
+
+.widget-control:hover {
+  background: #ffffff;
+  color: #1d1d1f;
+}
+
+.widget-control:active {
+  transform: scale(0.92);
+}
+
+.widget-control svg {
+  width: 13px;
+  height: 13px;
+}
+
+#pin-btn.active {
+  background: #e7f0ff;
+  color: var(--blue);
+  box-shadow: 0 1px 4px rgba(0, 122, 255, 0.16), inset 0 0 0 0.5px rgba(0, 122, 255, 0.2);
+}
+
+/* 通用头部 */
+
+.w-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  padding-right: 64px;
+}
+
+.w-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  color: #232227;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.w-title-button {
+  -webkit-app-region: no-drag;
+  border-radius: 6px;
+  padding: 2px 3px;
+  margin-left: -3px;
+}
+
+.w-title-button:hover {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.w-sub {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.w-nav {
+  display: flex;
+  flex: none;
+  gap: 1px;
+  -webkit-app-region: no-drag;
+}
+
+.w-nav-btn {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border-radius: 6px;
+  color: #8b8991;
+}
+
+.w-nav-btn:hover {
+  background: rgba(0, 0, 0, 0.055);
+  color: #333238;
+}
+
+.w-nav-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.w-weekdays {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(7, 1fr);
+  align-items: center;
+  height: 19px;
+  margin-top: 2px;
+  color: #a09ea6;
+  font-size: 8.5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* 月历 */
+
+.w-month-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  min-height: 0;
+  margin-top: 2px;
+}
+
+.w-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 0;
+  border-radius: 9px;
+  color: #403f45;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.12s ease;
+}
+
+.w-day:hover {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.w-day.outside {
+  visibility: hidden;
+}
+
+.w-day .num {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.w-day.today .num {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.w-day.selected:not(.today) .num {
+  background: rgba(0, 0, 0, 0.075);
+  font-weight: 600;
+}
+
+.w-day .dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 3px;
+}
+
+.w-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--dot-color, var(--blue));
+}
+
+/* 今天 */
+
+.w-today-content {
+  padding: 18px 20px 16px;
+}
+
+.w-today-top {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-right: 64px;
+}
+
+.w-today-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+
+.w-today-label {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.w-today-date {
+  color: var(--accent);
+  font-size: 68px;
+  font-weight: 300;
+  line-height: 0.92;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.w-today-meta {
+  padding-top: 3px;
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 1.55;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.w-today-meta strong {
+  display: block;
+  color: #56555c;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.w-divider {
+  flex: none;
+  height: 1px;
+  margin: 12px 0 8px;
+  background: rgba(0, 0, 0, 0.065);
+}
+
+.w-agenda {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.w-event {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 35px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  text-align: left;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.w-event:hover {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.w-event-bar {
+  width: 3px;
+  flex: none;
+  margin: 2px 0;
+  border-radius: 2px;
+  background: var(--color);
+}
+
+.w-event-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.w-event-title {
+  overflow: hidden;
+  color: #2c2b30;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.w-event-meta {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.w-more {
+  flex: none;
+  padding: 4px 6px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+
+.w-more:hover {
+  color: #1d1d1f;
+}
+
+.w-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: #a3a1a8;
+  font-size: 10.5px;
+}
+
+.w-today-footer {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding-top: 3px;
+}
+
+.w-open-btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--blue);
+  font-size: 9.5px;
+  font-weight: 550;
+  -webkit-app-region: no-drag;
+}
+
+.w-open-btn:hover {
+  background: rgba(0, 122, 255, 0.08);
+}
+
+/* 即将到来 */
+
+.w-upcoming {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.w-up-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  padding: 6px 7px;
+  border-radius: 9px;
+  text-align: left;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.w-up-row:hover {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.w-up-row + .w-up-row {
+  border-top: 1px solid rgba(0, 0, 0, 0.055);
+}
+
+.w-up-date {
+  width: 36px;
+  flex: none;
+  text-align: center;
+}
+
+.w-up-day {
+  color: #2d2c31;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.w-up-month {
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+}
+
+.w-up-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.w-up-title {
+  display: block;
+  overflow: hidden;
+  color: #2c2b30;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.w-up-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.w-up-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color);
+}
+
+.w-up-time {
+  flex: none;
+  color: #77757d;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.w-upcoming-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #a3a1a8;
+  font-size: 10.5px;
+}
+
+.w-upcoming-empty .big {
+  color: #c4c2c9;
+  font-size: 28px;
+  font-weight: 300;
+}
+
+/* 大号：月历 + 议程 */
+
+.w-large-content {
+  padding: 18px 20px 16px;
+}
+
+.w-large-month {
+  flex: none;
+}
+
+.w-large-month .w-weekdays {
+  height: 17px;
+}
+
+.w-large-month .w-month-grid {
+  flex: none;
+  height: 190px;
+  margin-top: 0;
+}
+
+.w-large-month .w-day {
+  font-size: 9.5px;
+  gap: 1px;
+}
+
+.w-large-month .w-day .num {
+  width: 21px;
+  height: 21px;
+}
+
+.w-large-month .w-dots {
+  height: 2px;
+}
+
+.w-large-month .w-dot {
+  width: 2.5px;
+  height: 2.5px;
+}
+
+.w-large-agenda {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.w-large-head {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px 4px;
+}
+
+.w-large-day-title {
+  color: #2b2a2f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.w-large-day-sub {
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+
+.w-large-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.w-large-list .w-event {
+  padding: 7px 7px;
+}
+
+.w-large-foot {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding-top: 6px;
+}
+
+.w-large-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  color: #a3a1a8;
+  font-size: 10.5px;
+}
+
+/* 文本溢出保护 */
+
+.w-title,
+.w-up-title,
+.w-event-title {
+  min-width: 0;
+}
