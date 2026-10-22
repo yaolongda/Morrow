@@ -9,6 +9,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>朝暮小组件</title>
   <link rel="stylesheet" href="widget.css" />
+  <link rel="stylesheet" href="widget-extra.css" />
 </head>
 <body>
   <div class="widget-shell">
@@ -25,8 +26,23 @@
         </button>
       </div>
       <div class="widget-content" id="widget-content"></div>
+      <div class="widget-menu hidden" id="widget-menu" role="menu">
+        <button data-action="size-small" role="menuitem">小尺寸</button>
+        <button data-action="size-medium" role="menuitem">中尺寸</button>
+        <button data-action="size-large" role="menuitem">大尺寸</button>
+        <button data-action="size-default" role="menuitem">恢复默认尺寸</button>
+        <div class="widget-menu-sep"></div>
+        <button data-action="lock" role="menuitem" id="lock-menu-btn">锁定位置与尺寸</button>
+        <button data-action="pin" role="menuitem" id="pin-menu-btn">置顶</button>
+        <div class="widget-menu-sep"></div>
+        <button data-action="close" role="menuitem" class="danger">关闭小组件</button>
+      </div>
+      <div class="resize-hint" aria-hidden="true"></div>
     </div>
   </div>
+  <script src="lib/schedule.js"></script>
+  <script src="lib/almanac.js"></script>
+  <script src="appearance.js"></script>
   <script src="widget.js"></script>
 </body>
 </html>

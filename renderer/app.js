@@ -8,18 +8,40 @@ const HOUR_HEIGHT = 56;
 const DAY_HEIGHT = HOUR_HEIGHT * 24;
 const MONTH_CHIP_HEIGHT = 19;
 const CALENDAR_COLORS = [
-  '#FF3B30',
-  '#FF9500',
-  '#FFCC00',
-  '#34C759',
-  '#007AFF',
-  '#AF52DE',
-  '#FF2D55',
+  '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#FF2D55',
 ];
-
 const WEEKDAY_FULL = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const WEEKDAY_SINGLE = ['日', '一', '二', '三', '四', '五', '六'];
+
+const DEFAULT_CALENDARS = [
+  { id: 'work', name: '工作', color: '#007AFF', visible: true },
+  { id: 'personal', name: '个人', color: '#FF9500', visible: true },
+  { id: 'family', name: '家庭', color: '#34C759', visible: true },
+];
+
+const DEFAULT_APPEARANCE = {
+  theme: 'classic',
+  accent: '#FF3B30',
+  font: 'system',
+  material: 'none',
+  panelOpacity: 0.94,
+  glass: 8,
+  background: null,
+};
+
+const DEFAULT_DISPLAY = {
+  lunar: true,
+  solarTerms: true,
+  almanac: false,
+  zodiac: false,
+};
+
+const DEFAULT_PLAN_SETTINGS = {
+  showInMonth: true,
+  showInWeek: true,
+  reminders: true,
+};
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -55,7 +77,8 @@ function startOfMonth(date) {
 
 function startOfWeek(date, weekStart = 1) {
   const result = startOfDay(date);
-  const diff = (result.getDay() - weekStart + 7) % 7;
+  const start = [0, 1, 6].includes(Number(weekStart)) ? Number(weekStart) : 1;
+  const diff = (result.getDay() - start + 7) % 7;
   return addDays(result, -diff);
 }
 
@@ -75,16 +98,8 @@ function ymd(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function dateValue(date) {
-  return ymd(date);
-}
-
 function timeValue(date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function localValue(date) {
-  return `${ymd(date)}T${timeValue(date)}`;
 }
 
 function parseLocal(value) {
@@ -106,16 +121,11 @@ function formatMonthDay(date) {
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (character) => {
     switch (character) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return '&#39;';
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      default: return '&#39;';
     }
   });
 }
@@ -124,10 +134,7 @@ function hexToRgb(hex) {
   const clean = String(hex).replace('#', '');
   const full =
     clean.length === 3
-      ? clean
-          .split('')
-          .map((char) => char + char)
-          .join('')
+      ? clean.split('').map((char) => char + char).join('')
       : clean;
   return {
     r: parseInt(full.slice(0, 2), 16) || 0,
@@ -146,25 +153,34 @@ function makeId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function colorMix(hex, mix, alpha = 1) {
+  const { r, g, b } = hexToRgb(hex);
+  const target = mix === 'white' ? 255 : 0;
+  const ratio = 0.65;
+  const nr = Math.round(r * ratio + target * (1 - ratio));
+  const ng = Math.round(g * ratio + target * (1 - ratio));
+  const nb = Math.round(b * ratio + target * (1 - ratio));
+  return `rgba(${nr}, ${ng}, ${nb}, ${alpha})`;
+}
+
 /* ------------------------------------------------------------------ */
 /* 状态                                                                */
 /* ------------------------------------------------------------------ */
 
-const DEFAULT_CALENDARS = [
-  { id: 'work', name: '工作', color: '#007AFF', visible: true },
-  { id: 'personal', name: '个人', color: '#FF9500', visible: true },
-  { id: 'family', name: '家庭', color: '#34C759', visible: true },
-];
-
 let state = {
-  version: 1,
+  version: 2,
   calendars: DEFAULT_CALENDARS,
   events: [],
+  plans: [],
   settings: {
     weekStart: 1,
     defaultCalendarId: 'work',
     lastView: 'month',
     sidebarVisible: true,
+    schedule: Schedule.defaultSchedule(),
+    appearance: { ...DEFAULT_APPEARANCE },
+    display: { ...DEFAULT_DISPLAY },
+    plans: { ...DEFAULT_PLAN_SETTINGS },
   },
 };
 
@@ -184,12 +200,15 @@ let clockTimer = null;
 let currentDayKey = ymd(new Date());
 let galleryWidgets = [];
 let dragState = null;
+let reminderShown = false;
 
 const mainView = $('#main-view');
 const eventOverlay = $('#event-overlay');
 const calendarOverlay = $('#calendar-overlay');
 const confirmOverlay = $('#confirm-overlay');
 const widgetOverlay = $('#widget-overlay');
+const settingsOverlay = $('#settings-overlay');
+const planOverlay = $('#plan-overlay');
 const calendarMenu = $('#calendar-menu');
 const appMenu = $('#app-menu');
 const searchInput = $('#search-input');
@@ -197,7 +216,7 @@ const searchResults = $('#search-results');
 const toast = $('#toast');
 
 /* ------------------------------------------------------------------ */
-/* 状态标准化与持久化                                                  */
+/* 状态标准化                                                          */
 /* ------------------------------------------------------------------ */
 
 function normalizeState(data) {
@@ -240,13 +259,7 @@ function normalizeState(data) {
     if (typeof event.start !== 'string' || typeof event.end !== 'string') continue;
     const start = parseLocal(event.start);
     const end = parseLocal(event.end);
-    if (
-      Number.isNaN(start.getTime()) ||
-      Number.isNaN(end.getTime()) ||
-      end.getTime() <= start.getTime()
-    ) {
-      continue;
-    }
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) continue;
     let id = event.id != null ? String(event.id) : '';
     if (!id || seenEvents.has(id)) id = makeId('ev');
     seenEvents.add(id);
@@ -259,17 +272,45 @@ function normalizeState(data) {
       start: event.start,
       end: event.end,
       allDay: event.allDay === true,
-      location:
-        typeof event.location === 'string' ? event.location.slice(0, 200) : '',
+      location: typeof event.location === 'string' ? event.location.slice(0, 200) : '',
       notes: typeof event.notes === 'string' ? event.notes.slice(0, 2000) : '',
     });
     if (events.length >= 20000) break;
   }
-
   events.sort(compareEvents);
+
+  const seenPlans = new Set();
+  const plans = [];
+  for (const plan of Array.isArray(source.plans) ? source.plans : []) {
+    if (!plan || typeof plan !== 'object') continue;
+    const title = typeof plan.title === 'string' ? plan.title.trim() : '';
+    const start = typeof plan.start === 'string' ? plan.start.slice(0, 10) : '';
+    const end = typeof plan.end === 'string' ? plan.end.slice(0, 10) : '';
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      continue;
+    }
+    if (end < start) continue;
+    let id = plan.id != null ? String(plan.id) : '';
+    if (!id || seenPlans.has(id)) id = makeId('plan');
+    seenPlans.add(id);
+    const calendarId = calendarIds.has(plan.calendarId) ? plan.calendarId : calendars[0].id;
+    plans.push({
+      id,
+      title: title.slice(0, 120),
+      start,
+      end,
+      calendarId,
+      progress: clamp(Math.round(Number(plan.progress) || 0), 0, 100),
+      notes: typeof plan.notes === 'string' ? plan.notes.slice(0, 2000) : '',
+    });
+    if (plans.length >= 500) break;
+  }
 
   const sourceSettings =
     source.settings && typeof source.settings === 'object' ? source.settings : {};
+  const weekStart = [0, 1, 6].includes(Number(sourceSettings.weekStart))
+    ? Number(sourceSettings.weekStart)
+    : 1;
   const defaultCalendarId = calendarIds.has(String(sourceSettings.defaultCalendarId))
     ? String(sourceSettings.defaultCalendarId)
     : calendars[0].id;
@@ -277,15 +318,73 @@ function normalizeState(data) {
     ? sourceSettings.lastView
     : 'month';
 
+  const sourceAppearance =
+    sourceSettings.appearance && typeof sourceSettings.appearance === 'object'
+      ? sourceSettings.appearance
+      : {};
+  const background =
+    sourceAppearance.background &&
+    typeof sourceAppearance.background === 'object' &&
+    typeof sourceAppearance.background.dataUrl === 'string' &&
+    sourceAppearance.background.dataUrl.startsWith('data:image/') &&
+    sourceAppearance.background.dataUrl.length < 8 * 1024 * 1024
+      ? {
+          dataUrl: sourceAppearance.background.dataUrl,
+          opacity: clamp(Number(sourceAppearance.background.opacity) || 0.4, 0.05, 1),
+          blur: clamp(Number(sourceAppearance.background.blur) || 0, 0, 30),
+          dim: clamp(Number(sourceAppearance.background.dim) || 0, 0, 0.7),
+        }
+      : null;
+  const appearance = {
+    theme: Appearance.THEMES[sourceAppearance.theme] ? sourceAppearance.theme : 'classic',
+    accent: /^#[0-9a-f]{6}$/i.test(sourceAppearance.accent || '')
+      ? sourceAppearance.accent
+      : '#FF3B30',
+    font: Appearance.FONTS[sourceAppearance.font] ? sourceAppearance.font : 'system',
+    material: ['none', 'mica', 'acrylic'].includes(sourceAppearance.material)
+      ? sourceAppearance.material
+      : 'none',
+    panelOpacity: clamp(Number(sourceAppearance.panelOpacity) || 0.94, 0.45, 1),
+    glass:
+      sourceAppearance.glass == null
+        ? 8
+        : clamp(Number(sourceAppearance.glass) || 0, 0, 36),
+    background,
+  };
+  const sourceDisplay =
+    sourceSettings.display && typeof sourceSettings.display === 'object'
+      ? sourceSettings.display
+      : {};
+  const display = {
+    lunar: sourceDisplay.lunar !== false,
+    solarTerms: sourceDisplay.solarTerms !== false,
+    almanac: sourceDisplay.almanac === true,
+    zodiac: sourceDisplay.zodiac === true,
+  };
+  const sourcePlanSettings =
+    sourceSettings.plans && typeof sourceSettings.plans === 'object'
+      ? sourceSettings.plans
+      : {};
+  const planSettings = {
+    showInMonth: sourcePlanSettings.showInMonth !== false,
+    showInWeek: sourcePlanSettings.showInWeek !== false,
+    reminders: sourcePlanSettings.reminders !== false,
+  };
+
   return {
-    version: 1,
+    version: 2,
     calendars,
     events,
+    plans,
     settings: {
-      weekStart: sourceSettings.weekStart === 0 ? 0 : 1,
+      weekStart,
       defaultCalendarId,
       lastView,
       sidebarVisible: sourceSettings.sidebarVisible !== false,
+      schedule: Schedule.normalize(sourceSettings.schedule),
+      appearance,
+      display,
+      plans: planSettings,
     },
   };
 }
@@ -321,12 +420,26 @@ function isEventVisible(event) {
 }
 
 function getWeekStart() {
-  return state.settings.weekStart === 0 ? 0 : 1;
+  return [0, 1, 6].includes(Number(state.settings.weekStart))
+    ? Number(state.settings.weekStart)
+    : 1;
 }
 
 function weekdayOrder() {
   const start = getWeekStart();
   return Array.from({ length: 7 }, (_, index) => (start + index) % 7);
+}
+
+function dayType(date) {
+  return Schedule.dayType(state.settings.schedule, date, getWeekStart());
+}
+
+function isRestDate(date) {
+  return dayType(date) === 'rest';
+}
+
+function isHalfDate(date) {
+  return dayType(date) === 'half';
 }
 
 function compareEvents(a, b) {
@@ -346,13 +459,20 @@ function eventsOnDay(day) {
       const end = parseLocal(event.end);
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
       if (event.allDay) {
-        const eventStart = startOfDay(start);
-        const eventEnd = startOfDay(end);
-        return dayStart >= eventStart && dayStart <= eventEnd;
+        return dayStart >= startOfDay(start) && dayStart <= startOfDay(end);
       }
       return start < dayEnd && end > dayStart;
     })
     .sort(compareEvents);
+}
+
+function plansOnDay(day) {
+  if (!state.settings.plans?.showInMonth) return [];
+  const key = ymd(day);
+  return state.plans
+    .filter((plan) => Plans.visible(plan, state))
+    .filter((plan) => plan.start <= key && plan.end >= key)
+    .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title, 'zh-CN'));
 }
 
 function upcomingEvents(limit = 4) {
@@ -365,6 +485,83 @@ function upcomingEvents(limit = 4) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 农历与今日信息                                                      */
+/* ------------------------------------------------------------------ */
+
+function displayPrefs() {
+  return state.settings.display || DEFAULT_DISPLAY;
+}
+
+function dayHeadExtra(date) {
+  const display = displayPrefs();
+  const term = display.solarTerms ? Almanac.termOf(date) : null;
+  if (term) return { text: term, isTerm: true };
+  if (display.lunar) {
+    const lunar = Almanac.lunarOf(date);
+    if (lunar) return { text: lunar.dayName, isTerm: false };
+  }
+  return null;
+}
+
+function nextTermInfo(date) {
+  const today = ymd(date);
+  let terms = Almanac.termsForYear(date.getFullYear());
+  let next = terms.find((term) => term.date >= today);
+  if (!next) {
+    next = Almanac.termsForYear(date.getFullYear() + 1)[0];
+  }
+  const nextDate = parseLocal(next.date);
+  return {
+    name: next.name,
+    date: nextDate,
+    days: daysBetween(date, nextDate),
+    isToday: next.date === today,
+  };
+}
+
+function renderDayBrief() {
+  const el = $('#day-brief');
+  if (!el) return;
+  const display = displayPrefs();
+  const visible =
+    display.lunar || display.solarTerms || display.almanac || display.zodiac;
+  if (!visible) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  const today = new Date();
+  const brief = Almanac.briefOf(today);
+  const term = nextTermInfo(today);
+  const parts = [];
+
+  parts.push(`<div class="brief-head">
+    <span class="brief-date">${today.getMonth() + 1}月${today.getDate()}日</span>
+    <span class="brief-lunar">${display.lunar && brief.lunar ? esc(brief.lunar.text) : ''}</span>
+  </div>`);
+  if (display.lunar && brief.lunar) {
+    parts.push(`<div class="brief-sub">${esc(brief.lunar.yearGanZhi)}年 · ${esc(brief.lunar.monthName)}</div>`);
+  }
+  if (display.solarTerms) {
+    parts.push(`<div class="brief-term">${
+      term.isToday ? `今日 ${term.name}` : `下一个节气 · ${term.name} · ${term.days} 天后`
+    }</div>`);
+  }
+  if (display.almanac) {
+    parts.push(`<div class="brief-yiji">
+      <span class="brief-yi">宜</span><span>${brief.yi.slice(0, 3).join(' · ')}</span>
+      <span class="brief-ji">忌</span><span>${brief.ji.slice(0, 3).join(' · ')}</span>
+    </div>`);
+  }
+  if (display.zodiac) {
+    parts.push(`<div class="brief-zodiac">${brief.zodiac.sign} <span class="brief-stars">${brief.zodiac.stars}</span><span class="brief-lucky">幸运色 ${brief.zodiac.luckyColor} · 数字 ${brief.zodiac.luckyNumber}</span></div>`);
+  }
+
+  el.classList.remove('hidden');
+  el.innerHTML = parts.join('');
+}
+
+/* ------------------------------------------------------------------ */
 /* 标题                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -373,9 +570,7 @@ function viewTitle() {
   if (view === 'day') {
     return `${cursor.getFullYear()}年${cursor.getMonth() + 1}月${cursor.getDate()}日 ${WEEKDAY_FULL[cursor.getDay()]}`;
   }
-  if (view === 'month') {
-    return `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`;
-  }
+  if (view === 'month') return `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`;
   const week = Array.from({ length: 7 }, (_, index) =>
     addDays(startOfWeek(cursor, getWeekStart()), index)
   );
@@ -404,6 +599,8 @@ function render() {
 
   renderMiniCalendar();
   renderCalendarList();
+  renderPlanList();
+  renderDayBrief();
   renderMainView();
   if (searchInput.value.trim()) renderSearchResults();
   updateNowLine();
@@ -431,6 +628,8 @@ function renderMiniCalendar() {
       if (day.getMonth() !== cursor.getMonth()) classes.push('outside');
       if (sameDay(day, today)) classes.push('today');
       if (sameDay(day, selected)) classes.push('selected');
+      if (isRestDate(day)) classes.push('rest-day');
+      if (isHalfDate(day)) classes.push('half-day');
       return `<button class="${classes.join(' ')}" data-date="${ymd(day)}">${day.getDate()}</button>`;
     })
     .join('');
@@ -442,13 +641,40 @@ function renderCalendarList() {
   list.innerHTML = state.calendars
     .map((calendar) => {
       const visible = calendar.visible !== false;
-      return `
-        <div class="cal-row ${visible ? '' : 'off'}" data-calendar-id="${esc(calendar.id)}" title="点击显示或隐藏 · 右键管理">
-          <span class="cal-check" style="--color:${calendar.color}">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
-          </span>
-          <span class="cal-name">${esc(calendar.name)}</span>
-        </div>`;
+      return `<div class="cal-row ${visible ? '' : 'off'}" data-calendar-id="${esc(
+        calendar.id
+      )}" title="点击显示或隐藏 · 右键管理">
+        <span class="cal-check" style="--color:${calendar.color}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+        </span>
+        <span class="cal-name">${esc(calendar.name)}</span>
+      </div>`;
+    })
+    .join('');
+}
+
+function renderPlanList() {
+  const list = $('#plan-list');
+  if (!list) return;
+  const active = Plans.active(state.plans)
+    .filter((plan) => Plans.visible(plan, state))
+    .slice(0, 3);
+  if (active.length === 0) {
+    list.innerHTML = '<div class="plan-empty">还没有计划</div>';
+    return;
+  }
+  list.innerHTML = active
+    .map((plan) => {
+      const meta = Plans.classify(plan);
+      const color = Plans.colorFor(plan, state);
+      return `<button class="side-plan" data-plan-id="${esc(plan.id)}" style="--plan-color:${color}">
+        <span class="side-plan-top">
+          <span class="side-plan-title">${esc(plan.title)}</span>
+          <span class="side-plan-percent">${plan.progress}%</span>
+        </span>
+        <span class="side-plan-track"><i style="width:${plan.progress}%"></i></span>
+        <span class="side-plan-meta">${meta.name} · ${plan.end.slice(5).replace('-', '/')} 截止</span>
+      </button>`;
     })
     .join('');
 }
@@ -468,6 +694,7 @@ function renderMonthView() {
   const today = startOfDay(new Date());
   const weekStart = getWeekStart();
   const gridStart = startOfWeek(startOfMonth(cursor), weekStart);
+  const showPlans = state.settings.plans?.showInMonth !== false;
 
   const weekdayHTML = weekdayOrder()
     .map((day) => `<div class="month-weekday">${WEEKDAY_SHORT[day]}</div>`)
@@ -477,37 +704,58 @@ function renderMonthView() {
     const day = addDays(gridStart, index);
     const outside = day.getMonth() !== cursor.getMonth();
     const isToday = sameDay(day, today);
+    const rest = isRestDate(day);
+    const half = isHalfDate(day);
+    const extra = dayHeadExtra(day);
     const events = eventsOnDay(day);
+    const plans = showPlans ? plansOnDay(day) : [];
+
+    const planChips = plans.slice(0, 2).map((plan) => {
+      const showTitle = plan.start === ymd(day) || index % 7 === 0;
+      return Plans.segmentHTML(plan, state, {
+        start: plan.start === ymd(day),
+        end: plan.end === ymd(day),
+        showTitle,
+        wide: showTitle,
+      });
+    });
+    const planMore =
+      plans.length > 2 ? `<div class="plan-more">还有 ${plans.length - 2} 个计划</div>` : '';
+
     const chips = events
       .map((event) => {
         const calendar = calendarFor(event);
         const start = parseLocal(event.start);
         const end = parseLocal(event.end);
-        const timeLabel = event.allDay
-          ? '全天'
-          : `${formatTime(start)}–${formatTime(end)}`;
+        const timeLabel = event.allDay ? '全天' : `${formatTime(start)}–${formatTime(end)}`;
         const tooltip = `${event.title} · ${timeLabel}${event.location ? ` · ${event.location}` : ''}`;
-        return `<button class="event-chip" data-event-id="${esc(event.id)}" style="--ev-color:${calendar.color};--ev-text:${textColorOn(calendar.color)}" title="${esc(tooltip)}"><span class="chip-title">${esc(event.title)}</span></button>`;
+        return `<button class="event-chip" data-event-id="${esc(event.id)}" style="--ev-color:${
+          calendar.color
+        };--ev-text:${textColorOn(calendar.color)}" title="${esc(tooltip)}"><span class="chip-title">${esc(
+          event.title
+        )}</span></button>`;
       })
       .join('');
 
-    return `
-      <div class="month-day ${outside ? 'outside' : ''} ${isToday ? 'today' : ''}" data-date="${ymd(day)}">
-        <div class="day-head">
-          <button class="day-number" data-action="open-day" data-date="${ymd(day)}">${day.getDate()}</button>
-        </div>
-        <div class="month-events">
-          ${chips}
-          <button class="more-events hidden" data-action="more" data-date="${ymd(day)}"></button>
-        </div>
-      </div>`;
+    return `<div class="month-day ${outside ? 'outside' : ''} ${isToday ? 'today' : ''} ${
+      rest ? 'rest-day' : ''
+    } ${half ? 'half-day' : ''}" data-date="${ymd(day)}">
+      <div class="day-head">
+        <button class="day-number" data-action="open-day" data-date="${ymd(day)}">${day.getDate()}</button>
+        ${extra ? `<span class="day-lunar ${extra.isTerm ? 'is-term' : ''}">${esc(extra.text)}</span>` : ''}
+      </div>
+      ${plans.length ? `<div class="month-plans">${planChips.join('')}${planMore}</div>` : ''}
+      <div class="month-events">
+        ${chips}
+        <button class="more-events hidden" data-action="more" data-date="${ymd(day)}"></button>
+      </div>
+    </div>`;
   }).join('');
 
-  mainView.innerHTML = `
-    <div class="month-view">
-      <div class="month-weekdays">${weekdayHTML}</div>
-      <div class="month-grid">${cellsHTML}</div>
-    </div>`;
+  mainView.innerHTML = `<div class="month-view">
+    <div class="month-weekdays">${weekdayHTML}</div>
+    <div class="month-grid">${cellsHTML}</div>
+  </div>`;
 
   requestAnimationFrame(fitMonthCells);
 }
@@ -521,9 +769,14 @@ function fitMonthCells() {
     const more = $('.more-events', holder);
     if (!more) return;
 
-    const contentHeight = cell.clientHeight - 5; // 上下内边距
-    const available = contentHeight - 23; // 日期数字行
-    const capacity = Math.max(0, Math.floor((available + (MONTH_CHIP_HEIGHT - 17)) / MONTH_CHIP_HEIGHT));
+    const planBox = $('.month-plans', cell);
+    const planHeight = planBox ? Math.min(planBox.offsetHeight + 2, 60) : 0;
+    const contentHeight = cell.clientHeight - 5;
+    const available = contentHeight - 23 - planHeight;
+    const capacity = Math.max(
+      0,
+      Math.floor((available + (MONTH_CHIP_HEIGHT - 17)) / MONTH_CHIP_HEIGHT)
+    );
 
     if (chips.length > capacity) {
       const visible = Math.max(0, capacity - 1);
@@ -551,14 +804,27 @@ function renderTimeView(mode) {
       : [startOfDay(cursor)];
 
   const heads = days
-    .map(
-      (day) => `
-      <button class="day-head-cell ${sameDay(day, today) ? 'today' : ''}" data-action="day-head" data-date="${ymd(day)}">
+    .map((day) => {
+      const extra = dayHeadExtra(day);
+      const rest = isRestDate(day);
+      const half = isHalfDate(day);
+      return `<button class="day-head-cell ${sameDay(day, today) ? 'today' : ''} ${
+        rest ? 'rest-day' : ''
+      } ${half ? 'half-day' : ''}" data-action="day-head" data-date="${ymd(day)}">
         <span class="dh-weekday">${WEEKDAY_SHORT[day.getDay()]}</span>
         <span class="dh-date">${day.getDate()}</span>
-      </button>`
-    )
+        ${extra ? `<span class="dh-lunar ${extra.isTerm ? 'is-term' : ''}">${esc(extra.text)}</span>` : ''}
+      </button>`;
+    })
     .join('');
+
+  const planLayout = buildPlanLayout(days);
+  const planBand = planLayout.lanes
+    ? `<div class="plan-band" style="height:${6 + planLayout.lanes * 19}px">
+        <div class="plan-gutter">计划</div>
+        <div class="plan-area">${planLayout.html}</div>
+      </div>`
+    : '';
 
   const allDay = buildAllDayLayout(days);
   const bandHeight = Math.max(28, 6 + allDay.lanes * 21);
@@ -577,30 +843,89 @@ function renderTimeView(mode) {
       const nowLine = sameDay(day, now)
         ? `<div class="now-line" style="top:${((now.getHours() * 60 + now.getMinutes()) / 1440) * DAY_HEIGHT}px"></div>`
         : '';
-      const weekend = day.getDay() === 0 || day.getDay() === 6;
-      return `<div class="day-column ${weekend ? 'weekend' : ''} ${sameDay(day, today) ? 'today' : ''}" data-date="${ymd(day)}">${nowLine}${blocks}</div>`;
+      const rest = isRestDate(day);
+      const half = isHalfDate(day);
+      return `<div class="day-column ${rest ? 'rest-day' : ''} ${half ? 'half-day' : ''} ${
+        sameDay(day, today) ? 'today' : ''
+      }" data-date="${ymd(day)}">${nowLine}${blocks}</div>`;
     })
     .join('');
 
-  mainView.innerHTML = `
-    <div class="time-view ${mode === 'day' ? 'day-mode' : ''}">
-      <div class="time-head">
-        <div class="head-gutter"></div>
-        <div class="day-heads">${heads}</div>
+  mainView.innerHTML = `<div class="time-view ${mode === 'day' ? 'day-mode' : ''}">
+    <div class="time-head">
+      <div class="head-gutter"></div>
+      <div class="day-heads">${heads}</div>
+    </div>
+    ${planBand}
+    <div class="allday-band" style="height:${bandHeight}px">
+      <div class="allday-gutter">全天</div>
+      <div class="allday-area">${allDay.html}</div>
+    </div>
+    <div class="time-scroll">
+      <div class="time-canvas">
+        <div class="time-gutter">${hours}</div>
+        <div class="day-columns">${columns}</div>
       </div>
-      <div class="allday-band" style="height:${bandHeight}px">
-        <div class="allday-gutter">全天</div>
-        <div class="allday-area">${allDay.html}</div>
-      </div>
-      <div class="time-scroll">
-        <div class="time-canvas">
-          <div class="time-gutter">${hours}</div>
-          <div class="day-columns">${columns}</div>
-        </div>
-      </div>
-    </div>`;
+    </div>
+  </div>`;
 
   restoreTimeScroll();
+}
+
+function buildPlanLayout(days) {
+  if (state.settings.plans?.showInWeek === false) return { html: '', lanes: 0 };
+  const rangeStart = startOfDay(days[0]);
+  const rangeEnd = addDays(startOfDay(days[days.length - 1]), 1);
+  const items = [];
+
+  for (const plan of state.plans) {
+    if (!Plans.visible(plan, state)) continue;
+    const start = parseLocal(plan.start);
+    const end = addDays(parseLocal(plan.end), 1);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+    if (end <= rangeStart || start >= rangeEnd) continue;
+    const startIndex = clamp(daysBetween(rangeStart, start), 0, days.length - 1);
+    const endIndex = clamp(daysBetween(rangeStart, addDays(end, -1)), 0, days.length - 1);
+    if (endIndex < startIndex) continue;
+    items.push({ plan, startIndex, endIndex });
+  }
+
+  items.sort(
+    (a, b) => a.startIndex - b.startIndex || b.endIndex - b.startIndex - (a.endIndex - a.startIndex)
+  );
+
+  const laneEnds = [];
+  for (const item of items) {
+    let lane = laneEnds.findIndex((end) => end < item.startIndex);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(item.endIndex);
+    } else {
+      laneEnds[lane] = item.endIndex;
+    }
+    item.lane = lane;
+  }
+
+  const html = items
+    .map((item) => {
+      const span = item.endIndex - item.startIndex + 1;
+      const left = (item.startIndex / days.length) * 100;
+      const width = (span / days.length) * 100;
+      return Plans.segmentHTML(item.plan, state, {
+        start: item.startIndex === 0 || item.plan.start === ymd(days[item.startIndex]),
+        end:
+          item.endIndex === days.length - 1 ||
+          item.plan.end === ymd(days[item.endIndex]),
+        showTitle: true,
+        wide: span > 1,
+        style: `left:calc(${left}% + 3px);width:calc(${width}% - 6px);top:${
+          4 + item.lane * 19
+        }px;height:18px;`,
+      });
+    })
+    .join('');
+
+  return { html, lanes: laneEnds.length };
 }
 
 function buildAllDayLayout(days) {
@@ -646,9 +971,13 @@ function buildAllDayLayout(days) {
       const width = (span / days.length) * 100;
       const start = parseLocal(item.event.start);
       const end = parseLocal(item.event.end);
-      const tooltip = `${item.event.title} · ${formatMonthDay(start)}${sameDay(start, end) ? '' : ` – ${formatMonthDay(end)}`} · 全天`;
+      const tooltip = `${item.event.title} · ${formatMonthDay(start)}${
+        sameDay(start, end) ? '' : ` – ${formatMonthDay(end)}`
+      } · 全天`;
       return `<button class="allday-chip" data-event-id="${esc(item.event.id)}"
-        style="left:calc(${left}% + 3px);width:calc(${width}% - 6px);top:${4 + item.lane * 21}px;--ev-color:${calendar.color};--ev-text:${textColorOn(calendar.color)}"
+        style="left:calc(${left}% + 3px);width:calc(${width}% - 6px);top:${
+        4 + item.lane * 21
+      }px;--ev-color:${calendar.color};--ev-text:${textColorOn(calendar.color)}"
         title="${esc(tooltip)}">${esc(item.event.title)}</button>`;
     })
     .join('');
@@ -725,8 +1054,12 @@ function buildTimedBlocks(day) {
       const tooltip = `${item.event.title} · ${timeLabel}${item.event.location ? ` · ${item.event.location}` : ''}`;
       const showTime = height >= 36;
       const showLocation = height >= 54 && item.event.location;
-      return `<button type="button" class="timed-event ${compact ? 'compact' : ''}" data-event-id="${esc(item.event.id)}"
-        style="left:calc(${left}% + 1px);width:calc(${width}% - 3px);top:${top}px;height:${height}px;--ev-color:${calendar.color};--ev-text:${textColorOn(calendar.color)}"
+      return `<button type="button" class="timed-event ${compact ? 'compact' : ''}" data-event-id="${esc(
+        item.event.id
+      )}"
+        style="left:calc(${left}% + 1px);width:calc(${width}% - 3px);top:${top}px;height:${height}px;--ev-color:${
+        calendar.color
+      };--ev-text:${textColorOn(calendar.color)}"
         title="${esc(tooltip)}">
         <span class="te-title">${esc(item.event.title)}</span>
         ${showTime ? `<span class="te-time">${timeLabel}</span>` : ''}
@@ -781,6 +1114,14 @@ function renderYearView() {
     const gridStart = startOfWeek(first, weekStart);
     const cells = Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
     const currentMonth = month === cursor.getMonth();
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const monthPlans = state.plans.filter((plan) => {
+      if (!Plans.visible(plan, state)) return false;
+      const start = parseLocal(plan.start);
+      const end = parseLocal(plan.end);
+      return start <= monthEnd && end >= monthStart;
+    });
 
     const days = cells
       .map((day) => {
@@ -795,19 +1136,27 @@ function renderYearView() {
             return `<span class="yd-dot" style="--color:${calendar.color}"></span>`;
           })
           .join('');
-        return `<div class="year-day ${sameDay(day, today) ? 'today' : ''}" data-date="${ymd(day)}" data-action="year-day">
+        return `<div class="year-day ${sameDay(day, today) ? 'today' : ''} ${
+          isRestDate(day) ? 'rest-day' : ''
+        } ${isHalfDate(day) ? 'half-day' : ''}" data-date="${ymd(day)}" data-action="year-day">
             <span class="yd-num">${day.getDate()}</span>
             <span class="yd-dots">${dots}</span>
           </div>`;
       })
       .join('');
 
-    return `
-      <section class="year-month">
-        <h3 class="year-month-title ${currentMonth ? 'current' : ''}" data-action="open-month" data-month="${month}">${month + 1}月</h3>
-        <div class="year-weekdays">${weekdayOrder().map((day) => `<span>${WEEKDAY_SINGLE[day]}</span>`).join('')}</div>
-        <div class="year-days">${days}</div>
-      </section>`;
+    const planMarks = monthPlans
+      .slice(0, 3)
+      .map((plan) => `<span class="year-plan-dot" style="--color:${Plans.colorFor(plan, state)}"></span>`)
+      .join('');
+
+    return `<section class="year-month">
+      <h3 class="year-month-title ${currentMonth ? 'current' : ''}" data-action="open-month" data-month="${month}">
+        ${month + 1}月${planMarks ? `<span class="year-plan-marks">${planMarks}</span>` : ''}
+      </h3>
+      <div class="year-weekdays">${weekdayOrder().map((day) => `<span>${WEEKDAY_SINGLE[day]}</span>`).join('')}</div>
+      <div class="year-days">${days}</div>
+    </section>`;
   }).join('');
 
   mainView.innerHTML = `<div class="year-view"><div class="year-grid">${months}</div></div>`;
@@ -855,6 +1204,12 @@ function openDayView(date) {
 /* ------------------------------------------------------------------ */
 
 mainView.addEventListener('click', (event) => {
+  const planNode = event.target.closest('[data-plan-id]');
+  if (planNode) {
+    openPlanEditor(planNode.dataset.planId);
+    return;
+  }
+
   const eventNode = event.target.closest('[data-event-id]');
   if (eventNode) {
     openEventDialog({ eventId: eventNode.dataset.eventId });
@@ -865,11 +1220,9 @@ mainView.addEventListener('click', (event) => {
   if (!actionNode) return;
   const action = actionNode.dataset.action;
 
-  if (action === 'open-day') {
-    openDayView(actionNode.dataset.date);
-  } else if (action === 'more') {
-    openDayView(actionNode.dataset.date);
-  } else if (action === 'day-head') {
+  if (action === 'open-day') openDayView(actionNode.dataset.date);
+  else if (action === 'more') openDayView(actionNode.dataset.date);
+  else if (action === 'day-head') {
     if (view !== 'day') openDayView(actionNode.dataset.date);
   } else if (action === 'open-month') {
     cursor = new Date(cursor.getFullYear(), Number(actionNode.dataset.month), 1);
@@ -878,8 +1231,7 @@ mainView.addEventListener('click', (event) => {
     saveState();
     render();
   } else if (action === 'year-day') {
-    const date = parseLocal(actionNode.dataset.date);
-    cursor = date;
+    cursor = parseLocal(actionNode.dataset.date);
     view = 'month';
     timeScrollTop = null;
     saveState();
@@ -888,17 +1240,13 @@ mainView.addEventListener('click', (event) => {
 });
 
 mainView.addEventListener('dblclick', (event) => {
-  if (event.target.closest('[data-event-id]')) return;
+  if (event.target.closest('[data-event-id]') || event.target.closest('[data-plan-id]')) return;
   if (event.target.closest('[data-action]')) return;
 
   if (view === 'month') {
     const cell = event.target.closest('.month-day');
     if (!cell) return;
-    openEventDialog({
-      date: cell.dataset.date,
-      startMinutes: 9 * 60,
-      endMinutes: 10 * 60,
-    });
+    openEventDialog({ date: cell.dataset.date, startMinutes: 9 * 60, endMinutes: 10 * 60 });
     return;
   }
 
@@ -922,11 +1270,10 @@ mainView.addEventListener('dblclick', (event) => {
   const column = event.target.closest('.day-column');
   if (!column) return;
   const minutes = minutesFromPointer(event.clientY, column, 30);
-  const endMinutes = Math.min(1440, minutes + 60);
   openEventDialog({
     date: column.dataset.date,
     startMinutes: minutes,
-    endMinutes,
+    endMinutes: Math.min(1440, minutes + 60),
   });
 });
 
@@ -940,7 +1287,7 @@ function minutesFromPointer(clientY, column, snap = 15) {
 mainView.addEventListener('mousedown', (event) => {
   if (event.button !== 0) return;
   if (view !== 'week' && view !== 'day') return;
-  if (event.target.closest('.timed-event')) return;
+  if (event.target.closest('.timed-event') || event.target.closest('[data-plan-id]')) return;
   const column = event.target.closest('.day-column');
   if (!column) return;
   if (event.target.closest('.now-line')) return;
@@ -961,7 +1308,6 @@ mainView.addEventListener('mousedown', (event) => {
     startY: event.clientY,
     moved: false,
     ghost,
-    pointerId: event.pointerId,
   };
 
   document.addEventListener('mousemove', onDragMove);
@@ -992,11 +1338,9 @@ function onDragEnd() {
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup', onDragEnd);
   if (!dragState) return;
-
   const { moved, ghost, date, startMinutes, currentMinutes } = dragState;
   ghost.remove();
   dragState = null;
-
   if (!moved) return;
   const { from, to } = dragRange(startMinutes, currentMinutes);
   if (to <= from) return;
@@ -1012,128 +1356,8 @@ $('#prev-btn').addEventListener('click', () => navigate(-1));
 $('#next-btn').addEventListener('click', () => navigate(1));
 $('#add-btn').addEventListener('click', () => openEventDialog({}));
 $('#widgets-btn').addEventListener('click', openWidgetGallery);
-$('#more-btn').addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (appMenu.classList.contains('hidden')) showAppMenu();
-  else hideAppMenu();
-});
-
-function showAppMenu() {
-  hideContextMenu();
-  hideSearchResults();
-  appMenu.classList.remove('hidden');
-  appMenu.style.left = '0px';
-  appMenu.style.top = '0px';
-  const rect = appMenu.getBoundingClientRect();
-  const buttonRect = $('#more-btn').getBoundingClientRect();
-  const left = clamp(buttonRect.right - rect.width, 8, window.innerWidth - rect.width - 8);
-  const top = Math.min(buttonRect.bottom + 6, window.innerHeight - rect.height - 8);
-  appMenu.style.left = `${left}px`;
-  appMenu.style.top = `${top}px`;
-}
-
-function hideAppMenu() {
-  appMenu.classList.add('hidden');
-}
-
-appMenu.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-action]');
-  if (!button) return;
-  const action = button.dataset.action;
-  hideAppMenu();
-
-  if (action === 'export-config') exportConfiguration();
-  else if (action === 'import-config') importConfiguration();
-  else if (action === 'open-data') openDataFolder();
-  else if (action === 'quit-app') window.desktop.quitApp();
-});
-
-async function exportConfiguration() {
-  try {
-    const result = await window.desktop.config.exportFile(state);
-    if (!result || result.canceled) return;
-    if (!result.ok) {
-      showToast(result.error || '导出失败');
-      return;
-    }
-    showToast('朝暮配置已导出（含日程与小组件）');
-  } catch {
-    showToast('导出失败，请重试');
-  }
-}
-
-async function importConfiguration() {
-  let result;
-  try {
-    result = await window.desktop.config.importFile();
-  } catch {
-    showToast('导入失败，请重试');
-    return;
-  }
-  if (!result || result.canceled) return;
-  if (!result.ok) {
-    showToast(result.error || '无法读取配置文件');
-    return;
-  }
-
-  const raw = result.payload?.data;
-  if (
-    !raw ||
-    !Array.isArray(raw.calendars) ||
-    raw.calendars.length === 0 ||
-    !Array.isArray(raw.events)
-  ) {
-    showToast('配置文件格式不正确');
-    return;
-  }
-
-  const importedState = normalizeState(raw);
-  const widgets = Array.isArray(result.payload.widgets) ? result.payload.widgets : null;
-  const widgetCount = widgets
-    ? widgets.filter((widget) => widget && WIDGET_INFO[widget.type]).length
-    : null;
-  const fileName = result.filePath ? result.filePath.split(/[\\/]/).pop() : '配置文件';
-
-  openConfirm({
-    title: '导入配置？',
-    text: `将用「${fileName}」覆盖当前 ${state.calendars.length} 个日历、${state.events.length} 个日程${
-      widgetCount !== null ? `，并替换 ${widgetCount} 个桌面小组件` : ''
-    }。此操作无法撤销。`,
-    okLabel: '导入',
-    onConfirm: async () => {
-      closeAllPopups();
-      state = importedState;
-      view = ['month', 'week', 'day', 'year'].includes(state.settings.lastView)
-        ? state.settings.lastView
-        : 'month';
-      cursor = startOfDay(new Date());
-      sidebarVisible = state.settings.sidebarVisible !== false;
-      applySidebarState();
-      searchInput.value = '';
-      hideSearchResults();
-      saveState();
-      render();
-
-      if (widgets) {
-        try {
-          await window.desktop.widgets.importConfigs(widgets);
-        } catch {
-          // 日程已经导入成功，小组件失败时仍保留数据。
-        }
-      }
-      showToast(`已导入 ${state.events.length} 个日程`);
-    },
-  });
-}
-
-async function openDataFolder() {
-  try {
-    const error = await window.desktop.openDataFolder();
-    if (error) showToast('无法打开数据文件夹');
-  } catch {
-    showToast('无法打开数据文件夹');
-  }
-}
+$('#settings-btn').addEventListener('click', () => openSettings('general'));
+$('#add-plan-btn').addEventListener('click', () => openPlanEditor(null));
 
 $('#view-switch').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-view]');
@@ -1188,6 +1412,13 @@ $('#calendar-list').addEventListener('contextmenu', (event) => {
   showContextMenu(event.clientX, event.clientY);
 });
 
+$('#plan-list').addEventListener('click', (event) => {
+  const plan = event.target.closest('[data-plan-id]');
+  if (plan) openPlanEditor(plan.dataset.planId);
+});
+
+$('#day-brief').addEventListener('click', () => openSettings('display'));
+
 function showContextMenu(x, y) {
   calendarMenu.classList.remove('hidden');
   calendarMenu.style.left = '0px';
@@ -1207,21 +1438,20 @@ calendarMenu.addEventListener('click', (event) => {
   const calendar = calendarById(contextCalendarId);
   hideContextMenu();
   if (!calendar) return;
-  if (button.dataset.action === 'rename') {
-    openCalendarDialog('rename', calendar.id);
-  } else if (button.dataset.action === 'delete') {
-    requestCalendarDelete(calendar);
-  }
+  if (button.dataset.action === 'rename') openCalendarDialog('rename', calendar.id);
+  else if (button.dataset.action === 'delete') requestCalendarDelete(calendar);
 });
+
+function hideSearchResults() {
+  searchResults.classList.add('hidden');
+}
 
 document.addEventListener('mousedown', (event) => {
   if (!calendarMenu.contains(event.target)) hideContextMenu();
   if (!searchResults.classList.contains('hidden') && !event.target.closest('#search-box')) {
     hideSearchResults();
   }
-  if (!appMenu.contains(event.target) && !event.target.closest('#more-btn')) {
-    hideAppMenu();
-  }
+  if (!appMenu.contains(event.target) && !event.target.closest('#more-btn')) hideAppMenu();
 });
 
 window.addEventListener('resize', () => {
@@ -1277,8 +1507,7 @@ function renderSearchResults() {
     .map((event) => {
       const start = parseLocal(event.start);
       const end = parseLocal(event.end);
-      const past = end.getTime() < now;
-      return { event, start, past };
+      return { event, start, past: end.getTime() < now };
     })
     .sort((a, b) => {
       if (a.past !== b.past) return a.past ? 1 : -1;
@@ -1306,10 +1535,6 @@ function renderSearchResults() {
     .join('');
 }
 
-function hideSearchResults() {
-  searchResults.classList.add('hidden');
-}
-
 searchResults.addEventListener('click', (event) => {
   const item = event.target.closest('.search-item');
   if (item) openSearchResult(item.dataset.eventId);
@@ -1333,10 +1558,10 @@ function formatEventWhen(event) {
   const end = parseLocal(event.end);
   const today = startOfDay(new Date());
   let dayLabel;
-  const dayDiff = daysBetween(today, start);
-  if (dayDiff === 0) dayLabel = '今天';
-  else if (dayDiff === 1) dayLabel = '明天';
-  else if (dayDiff === -1) dayLabel = '昨天';
+  const diff = daysBetween(today, start);
+  if (diff === 0) dayLabel = '今天';
+  else if (diff === 1) dayLabel = '明天';
+  else if (diff === -1) dayLabel = '昨天';
   else dayLabel = `${formatMonthDay(start)} ${WEEKDAY_SHORT[start.getDay()]}`;
 
   if (event.allDay) {
@@ -1363,6 +1588,8 @@ function openEventDialog(options = {}) {
   hideContextMenu();
   hideAppMenu();
   hideSearchResults();
+  if (window.SettingsUI?.isOpen()) SettingsUI.close();
+  if (window.Plans?.isOpen()) Plans.closeEditor();
 
   const existing = options.eventId
     ? state.events.find((event) => event.id === options.eventId)
@@ -1417,9 +1644,9 @@ function openEventDialog(options = {}) {
     end = new Date(start.getTime() + 60 * 60 * 1000);
   }
 
-  $('#event-start-date').value = dateValue(start);
+  $('#event-start-date').value = ymd(start);
   $('#event-start-time').value = timeValue(start);
-  $('#event-end-date').value = dateValue(end);
+  $('#event-end-date').value = ymd(end);
   $('#event-end-time').value = timeValue(end);
   $('#event-allday').checked = allDay;
   updateAllDayState();
@@ -1435,9 +1662,8 @@ function openEventDialog(options = {}) {
 function nextRoundedTime() {
   const now = new Date();
   now.setSeconds(0, 0);
-  if (now.getMinutes() < 30) {
-    now.setMinutes(30);
-  } else {
+  if (now.getMinutes() < 30) now.setMinutes(30);
+  else {
     now.setHours(now.getHours() + 1);
     now.setMinutes(0);
   }
@@ -1484,7 +1710,6 @@ function saveEvent() {
   const allDay = $('#event-allday').checked;
   const startDate = $('#event-start-date').value;
   const endDate = $('#event-end-date').value || startDate;
-
   if (!startDate) {
     showToast('请选择开始日期');
     return;
@@ -1492,7 +1717,6 @@ function saveEvent() {
 
   let start;
   let end;
-
   if (allDay) {
     if (endDate < startDate) {
       showToast('结束日期不能早于开始日期');
@@ -1573,7 +1797,9 @@ function renderSwatches(selectedColor) {
   const container = $('#calendar-swatches');
   container.innerHTML = CALENDAR_COLORS.map(
     (color) =>
-      `<button class="swatch ${color === selectedColor ? 'selected' : ''}" data-color="${color}" style="--color:${color}" aria-label="${color}"></button>`
+      `<button class="swatch ${
+        color === selectedColor ? 'selected' : ''
+      }" data-color="${color}" style="--color:${color}" aria-label="${color}"></button>`
   ).join('');
 }
 
@@ -1610,12 +1836,7 @@ function saveCalendar() {
     }
     showToast('已更新日历');
   } else {
-    const calendar = {
-      id: makeId('cal'),
-      name,
-      color,
-      visible: true,
-    };
+    const calendar = { id: makeId('cal'), name, color, visible: true };
     state.calendars.push(calendar);
     if (!state.settings.defaultCalendarId) state.settings.defaultCalendarId = calendar.id;
     showToast('已添加日历');
@@ -1633,32 +1854,30 @@ $('#calendar-name').addEventListener('keydown', (event) => {
   }
 });
 
-function openConfirm({ title, text, okLabel = '确定', onConfirm }) {
-  pendingConfirm = { title, text, okLabel, onConfirm };
-  $('#confirm-title').textContent = title;
-  $('#confirm-text').textContent = text;
-  $('#confirm-ok').textContent = okLabel;
-  confirmOverlay.classList.remove('hidden');
-}
-
 function requestCalendarDelete(calendar) {
   if (state.calendars.length <= 1) {
     showToast('至少需要保留一个日历');
     return;
   }
   const eventCount = state.events.filter((event) => event.calendarId === calendar.id).length;
+  const planCount = state.plans.filter((plan) => plan.calendarId === calendar.id).length;
   openConfirm({
     title: `删除“${calendar.name}”？`,
-    text:
-      eventCount > 0
-        ? `该日历中的 ${eventCount} 个日程也会被删除，此操作无法撤销。`
-        : '删除后无法恢复。',
+    text: `${eventCount > 0 ? `该日历中的 ${eventCount} 个日程会被删除。` : ''}${
+      planCount > 0 ? ` ${planCount} 个计划会移至其它日历。` : ''
+    }此操作无法撤销。`,
     okLabel: '删除',
     onConfirm: () => {
       state.calendars = state.calendars.filter((item) => item.id !== calendar.id);
       state.events = state.events.filter((event) => event.calendarId !== calendar.id);
+      const fallback = state.calendars[0]?.id;
+      if (fallback) {
+        for (const plan of state.plans) {
+          if (plan.calendarId === calendar.id) plan.calendarId = fallback;
+        }
+      }
       if (state.settings.defaultCalendarId === calendar.id) {
-        state.settings.defaultCalendarId = state.calendars[0]?.id || null;
+        state.settings.defaultCalendarId = fallback || null;
       }
       saveState();
       render();
@@ -1667,16 +1886,23 @@ function requestCalendarDelete(calendar) {
   });
 }
 
-$('#confirm-cancel').addEventListener('click', closeConfirmDialog);
-$('#confirm-ok').addEventListener('click', () => {
-  const action = pendingConfirm?.onConfirm;
-  closeConfirmDialog();
-  if (action) action();
-});
+/* ------------------------------------------------------------------ */
+/* 计划                                                                */
+/* ------------------------------------------------------------------ */
 
-function closeConfirmDialog() {
-  confirmOverlay.classList.add('hidden');
-  pendingConfirm = null;
+function openPlanEditor(planId = null) {
+  closeEventDialog();
+  closeWidgetGallery();
+  closeCalendarDialog();
+  closeConfirmDialog();
+  hideContextMenu();
+  hideAppMenu();
+  hideSearchResults();
+  if (window.SettingsUI?.isOpen()) SettingsUI.close();
+  if (window.Plans?.isOpen()) Plans.closeEditor();
+  Plans.openEditor(planId, {
+    calendarId: state.settings.defaultCalendarId || state.calendars[0]?.id,
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1717,6 +1943,8 @@ async function openWidgetGallery() {
   hideContextMenu();
   hideAppMenu();
   hideSearchResults();
+  if (window.SettingsUI?.isOpen()) SettingsUI.close();
+  if (window.Plans?.isOpen()) Plans.closeEditor();
   widgetOverlay.classList.remove('hidden');
   await refreshWidgetGallery();
 }
@@ -1741,7 +1969,9 @@ function renderWidgetGallery() {
     .map(([type, info]) => {
       const count = galleryWidgets.filter((widget) => widget.type === type).length;
       return `<article class="wg-card">
-        <div class="wg-preview ${type === 'today' ? 'wg-today-preview' : ''} ${type === 'monthAgenda' ? 'wg-large-preview' : ''}">${info.preview()}</div>
+        <div class="wg-preview ${type === 'today' ? 'wg-today-preview' : ''} ${
+        type === 'monthAgenda' ? 'wg-large-preview' : ''
+      }">${info.preview()}</div>
         <div class="wg-info">
           <h3 class="wg-name">${info.name}</h3>
           <p class="wg-meta">${info.size}${count > 0 ? ` · 已添加 ${count} 个` : ''}</p>
@@ -1763,9 +1993,7 @@ $('#widget-gallery').addEventListener('click', async (event) => {
   button.disabled = true;
   try {
     if (existing.length > 0) {
-      for (const widget of existing) {
-        await window.desktop.widgets.remove(widget.id);
-      }
+      for (const widget of existing) await window.desktop.widgets.remove(widget.id);
       showToast(`已移除「${WIDGET_INFO[type].name}」小组件`);
     } else {
       await window.desktop.widgets.add(type);
@@ -1782,9 +2010,7 @@ $('#widget-close').addEventListener('click', closeWidgetGallery);
 /* 小组件预览 */
 
 function previewWeekdayRow() {
-  return weekdayOrder()
-    .map((day) => `<span>${WEEKDAY_SINGLE[day]}</span>`)
-    .join('');
+  return weekdayOrder().map((day) => `<span>${WEEKDAY_SINGLE[day]}</span>`).join('');
 }
 
 function previewMiniGrid(rows = 5, includeEvents = true) {
@@ -1799,6 +2025,7 @@ function previewMiniGrid(rows = 5, includeEvents = true) {
         const classes = ['wgp-day'];
         if (day.getMonth() !== cursor.getMonth()) classes.push('dim');
         if (sameDay(day, today)) classes.push('today');
+        if (isRestDate(day)) classes.push('rest');
         if (events.length > 0) classes.push('has-event');
         return `<div class="${classes.join(' ')}" ${color ? `style="--dot-color:${color}"` : ''}>${day.getDate()}</div>`;
       })
@@ -1872,11 +2099,19 @@ function previewMonthAgenda() {
 /* 提示与浮层                                                          */
 /* ------------------------------------------------------------------ */
 
-function showToast(message) {
+function showToast(message, duration = 1900) {
   toast.textContent = message;
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 1900);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+function openConfirm({ title, text, okLabel = '确定', onConfirm }) {
+  pendingConfirm = { title, text, okLabel, onConfirm };
+  $('#confirm-title').textContent = title;
+  $('#confirm-text').textContent = text;
+  $('#confirm-ok').textContent = okLabel;
+  confirmOverlay.classList.remove('hidden');
 }
 
 [[eventOverlay, closeEventDialog], [calendarOverlay, closeCalendarDialog], [confirmOverlay, closeConfirmDialog], [widgetOverlay, closeWidgetGallery]].forEach(
@@ -1887,14 +2122,175 @@ function showToast(message) {
   }
 );
 
+$('#confirm-cancel').addEventListener('click', closeConfirmDialog);
+$('#confirm-ok').addEventListener('click', () => {
+  const action = pendingConfirm?.onConfirm;
+  closeConfirmDialog();
+  if (action) action();
+});
+
+function closeConfirmDialog() {
+  confirmOverlay.classList.add('hidden');
+  pendingConfirm = null;
+}
+
 function closeAllPopups() {
   closeEventDialog();
   closeCalendarDialog();
   closeConfirmDialog();
   closeWidgetGallery();
+  if (window.SettingsUI?.isOpen()) SettingsUI.close();
+  if (window.Plans?.isOpen()) Plans.closeEditor();
   hideContextMenu();
   hideAppMenu();
   hideSearchResults();
+}
+
+/* ------------------------------------------------------------------ */
+/* 设置 / 外观 / 菜单                                                  */
+/* ------------------------------------------------------------------ */
+
+function openSettings(section = 'general') {
+  closeAllPopups();
+  SettingsUI.open(section);
+}
+
+function settingsChanged(options = {}) {
+  if (options.sidebar) {
+    sidebarVisible = state.settings.sidebarVisible !== false;
+    applySidebarState();
+  }
+  saveState();
+  Appearance.apply(state.settings);
+  if (!options.soft) render();
+}
+
+function hideAppMenu() {
+  appMenu.classList.add('hidden');
+}
+
+function showAppMenu() {
+  hideContextMenu();
+  hideSearchResults();
+  appMenu.classList.remove('hidden');
+  appMenu.style.left = '0px';
+  appMenu.style.top = '0px';
+  const rect = appMenu.getBoundingClientRect();
+  const buttonRect = $('#more-btn').getBoundingClientRect();
+  const left = clamp(buttonRect.right - rect.width, 8, window.innerWidth - rect.width - 8);
+  const top = Math.min(buttonRect.bottom + 6, window.innerHeight - rect.height - 8);
+  appMenu.style.left = `${left}px`;
+  appMenu.style.top = `${top}px`;
+}
+
+$('#more-btn').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (appMenu.classList.contains('hidden')) showAppMenu();
+  else hideAppMenu();
+});
+
+appMenu.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  const action = button.dataset.action;
+  hideAppMenu();
+
+  if (action === 'new-plan') openPlanEditor(null);
+  else if (action === 'new-event') openEventDialog({});
+  else if (action === 'export-config') exportConfiguration();
+  else if (action === 'import-config') importConfiguration();
+  else if (action === 'open-settings') openSettings('general');
+  else if (action === 'open-about') openSettings('about');
+  else if (action === 'open-data') openDataFolder();
+  else if (action === 'quit-app') window.desktop.quitApp();
+});
+
+async function exportConfiguration() {
+  try {
+    const result = await window.desktop.config.exportFile(state);
+    if (!result || result.canceled) return;
+    if (!result.ok) {
+      showToast(result.error || '导出失败');
+      return;
+    }
+    showToast('朝暮配置已导出（含日程、计划与小组件）');
+  } catch {
+    showToast('导出失败，请重试');
+  }
+}
+
+async function importConfiguration() {
+  let result;
+  try {
+    result = await window.desktop.config.importFile();
+  } catch {
+    showToast('导入失败，请重试');
+    return;
+  }
+  if (!result || result.canceled) return;
+  if (!result.ok) {
+    showToast(result.error || '无法读取配置文件');
+    return;
+  }
+
+  const raw = result.payload?.data;
+  if (
+    !raw ||
+    !Array.isArray(raw.calendars) ||
+    raw.calendars.length === 0 ||
+    !Array.isArray(raw.events)
+  ) {
+    showToast('配置文件格式不正确');
+    return;
+  }
+
+  const importedState = normalizeState(raw);
+  const widgets = Array.isArray(result.payload.widgets) ? result.payload.widgets : null;
+  const widgetCount = widgets
+    ? widgets.filter((widget) => widget && WIDGET_INFO[widget.type]).length
+    : null;
+  const fileName = result.filePath ? result.filePath.split(/[\\/]/).pop() : '配置文件';
+
+  openConfirm({
+    title: '导入配置？',
+    text: `将用「${fileName}」覆盖当前 ${state.calendars.length} 个日历、${state.events.length} 个日程、${
+      state.plans.length
+    } 个计划${widgetCount !== null ? `，并替换 ${widgetCount} 个桌面小组件` : ''}。此操作无法撤销。`,
+    okLabel: '导入',
+    onConfirm: async () => {
+      closeAllPopups();
+      state = importedState;
+      view = ['month', 'week', 'day', 'year'].includes(state.settings.lastView)
+        ? state.settings.lastView
+        : 'month';
+      cursor = startOfDay(new Date());
+      sidebarVisible = state.settings.sidebarVisible !== false;
+      applySidebarState();
+      searchInput.value = '';
+      hideSearchResults();
+      Appearance.apply(state.settings);
+      saveState();
+      render();
+
+      if (widgets) {
+        try {
+          await window.desktop.widgets.importConfigs(widgets);
+        } catch {
+          // 日程已导入，小组件失败时保留数据
+        }
+      }
+      showToast(`已导入 ${state.events.length} 个日程、${state.plans.length} 个计划`);
+    },
+  });
+}
+
+async function openDataFolder() {
+  try {
+    const error = await window.desktop.openDataFolder();
+    if (error) showToast('无法打开数据文件夹');
+  } catch {
+    showToast('无法打开数据文件夹');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1905,30 +2301,20 @@ document.addEventListener('keydown', (event) => {
   const inField = event.target.matches('input, textarea, select');
 
   if (event.key === 'Escape') {
-    if (!confirmOverlay.classList.contains('hidden')) {
-      closeConfirmDialog();
+    if (window.SettingsUI?.isOpen()) {
+      SettingsUI.close();
       return;
     }
-    if (!calendarOverlay.classList.contains('hidden')) {
-      closeCalendarDialog();
+    if (window.Plans?.isOpen()) {
+      Plans.closeEditor();
       return;
     }
-    if (!widgetOverlay.classList.contains('hidden')) {
-      closeWidgetGallery();
-      return;
-    }
-    if (!eventOverlay.classList.contains('hidden')) {
-      closeEventDialog();
-      return;
-    }
-    if (!calendarMenu.classList.contains('hidden')) {
-      hideContextMenu();
-      return;
-    }
-    if (!appMenu.classList.contains('hidden')) {
-      hideAppMenu();
-      return;
-    }
+    if (!confirmOverlay.classList.contains('hidden')) return closeConfirmDialog();
+    if (!calendarOverlay.classList.contains('hidden')) return closeCalendarDialog();
+    if (!widgetOverlay.classList.contains('hidden')) return closeWidgetGallery();
+    if (!eventOverlay.classList.contains('hidden')) return closeEventDialog();
+    if (!calendarMenu.classList.contains('hidden')) return hideContextMenu();
+    if (!appMenu.classList.contains('hidden')) return hideAppMenu();
     if (!searchResults.classList.contains('hidden')) {
       hideSearchResults();
       searchInput.blur();
@@ -1937,11 +2323,19 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
+  if (window.SettingsUI?.isOpen() || window.Plans?.isOpen()) return;
+
   if (!eventOverlay.classList.contains('hidden')) {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       saveEvent();
     }
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+    event.preventDefault();
+    openSettings('general');
     return;
   }
 
@@ -1958,13 +2352,11 @@ document.addEventListener('keydown', (event) => {
   }
 
   if (inField) return;
-
   if (event.key === '/') {
     event.preventDefault();
     focusSearch();
     return;
   }
-
   if (event.ctrlKey || event.metaKey || event.altKey) return;
 
   const key = event.key.toLowerCase();
@@ -1983,6 +2375,9 @@ document.addEventListener('keydown', (event) => {
   } else if (key === 'y') {
     event.preventDefault();
     switchView('year');
+  } else if (key === 'p') {
+    event.preventDefault();
+    openPlanEditor(null);
   } else if (event.key === 'ArrowLeft') {
     event.preventDefault();
     navigate(-1);
@@ -1993,7 +2388,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* 来从小部件 / 托盘的导航                                             */
+/* 导航与启动                                                          */
 /* ------------------------------------------------------------------ */
 
 function handleNavigation(payload) {
@@ -2043,9 +2438,16 @@ window.desktop.widgets.onChange(() => {
   if (!widgetOverlay.classList.contains('hidden')) refreshWidgetGallery();
 });
 
-/* ------------------------------------------------------------------ */
-/* 启动                                                                */
-/* ------------------------------------------------------------------ */
+window.__app = {
+  getState: () => state,
+  saveState,
+  render,
+  showToast,
+  openConfirm,
+  openPlanEditor,
+  openSettings,
+  SettingsUI,
+};
 
 async function init() {
   try {
@@ -2059,6 +2461,35 @@ async function init() {
   cursor = startOfDay(new Date());
   sidebarVisible = state.settings.sidebarVisible !== false;
   applySidebarState();
+  Appearance.apply(state.settings);
+
+  Plans.init({
+    getState: () => state,
+    saveState,
+    render,
+    showToast,
+    openConfirm,
+  });
+
+  SettingsUI.init({
+    getState: () => state,
+    onChange: settingsChanged,
+    getAppInfo: () => window.desktop.appInfo(),
+    exportConfig: exportConfiguration,
+    importConfig: importConfiguration,
+    openDataFolder,
+    openPlanEditor,
+    openExternal: (url) => window.desktop.openExternal(url),
+    showToast,
+  });
+
+  const planCalendar = $('#plan-calendar');
+  if (planCalendar) {
+    planCalendar.addEventListener('change', () => {
+      const calendar = calendarById(planCalendar.value);
+      $('#plan-calendar-dot').style.background = calendar?.color || '#8E8E93';
+    });
+  }
 
   render();
   window.desktop.rendererReady();
@@ -2073,6 +2504,13 @@ async function init() {
       updateNowLine();
     }
   }, 30000);
+
+  setTimeout(() => {
+    if (!reminderShown) {
+      reminderShown = true;
+      Plans.dailyReminder();
+    }
+  }, 1400);
 }
 
 init();
@@ -2094,6 +2532,12 @@ window.__calendarTest = {
   openWidgetGallery() {
     openWidgetGallery();
   },
+  openSettings(section = 'general') {
+    openSettings(section);
+  },
+  openPlanEditor(id = null) {
+    openPlanEditor(id);
+  },
   closeAll() {
     closeAllPopups();
   },
@@ -2101,13 +2545,20 @@ window.__calendarTest = {
     return {
       view,
       events: state.events.length,
+      plans: state.plans.length,
       calendars: state.calendars.length,
+      weekStart: getWeekStart(),
       monthCells: $$('.month-day', mainView).length,
+      restDays: $$('.month-day.rest-day', mainView).length,
+      halfDays: $$('.month-day.half-day', mainView).length,
+      planChips: $$('.plan-chip', mainView).length,
       eventChips: $$('.event-chip', mainView).length,
       timedEvents: $$('.timed-event', mainView).length,
       allDayChips: $$('.allday-chip', mainView).length,
       yearMonths: $$('.year-month', mainView).length,
       dialogOpen: !eventOverlay.classList.contains('hidden'),
+      settingsOpen: Boolean(window.SettingsUI?.isOpen()),
+      planEditorOpen: Boolean(window.Plans?.isOpen()),
       widgetGalleryOpen: !widgetOverlay.classList.contains('hidden'),
       widgetsAdded: galleryWidgets.length,
     };

@@ -8,12 +8,28 @@ const params = new URLSearchParams(window.location.search);
 const widgetType = params.get('type') || 'month';
 const widgetId = params.get('id') || '';
 const content = document.getElementById('widget-content');
+const card = document.getElementById('widget-card');
 const pinButton = document.getElementById('pin-btn');
 const closeButton = document.getElementById('close-btn');
+const widgetMenu = document.getElementById('widget-menu');
+const lockMenuButton = document.getElementById('lock-menu-btn');
+const pinMenuButton = document.getElementById('pin-menu-btn');
 
 const WEEKDAY_FULL = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const WEEKDAY_SINGLE = ['日', '一', '二', '三', '四', '五', '六'];
+
+const DEFAULT_SIZES = {
+  month: { width: 360, height: 388 },
+  today: { width: 360, height: 388 },
+  upcoming: { width: 676, height: 344 },
+  monthAgenda: { width: 676, height: 696 },
+};
+const SIZE_PRESETS = {
+  small: { width: 360, height: 388 },
+  medium: { width: 560, height: 460 },
+  large: { width: 760, height: 640 },
+};
 
 const pad = (value) => String(value).padStart(2, '0');
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -46,7 +62,8 @@ function startOfMonth(date) {
 
 function startOfWeek(date, weekStart) {
   const result = startOfDay(date);
-  const diff = (result.getDay() - weekStart + 7) % 7;
+  const start = [0, 1, 6].includes(Number(weekStart)) ? Number(weekStart) : 1;
+  const diff = (result.getDay() - start + 7) % 7;
   return addDays(result, -diff);
 }
 
@@ -77,16 +94,11 @@ function formatTime(date) {
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (character) => {
     switch (character) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return '&#39;';
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      default: return '&#39;';
     }
   });
 }
@@ -98,11 +110,17 @@ function esc(value) {
 let state = {
   calendars: [],
   events: [],
-  settings: { weekStart: 1 },
+  settings: {
+    weekStart: 1,
+    schedule: Schedule.defaultSchedule(),
+    display: { lunar: true, solarTerms: true },
+    appearance: {},
+  },
 };
 let monthCursor = startOfDay(new Date());
 let selectedDate = startOfDay(new Date());
 let pinned = params.get('pin') === '1';
+let locked = params.get('locked') === '1';
 let lastDayKey = ymd(new Date());
 let renderQueued = false;
 
@@ -110,17 +128,28 @@ function normalize(data) {
   const source = data && typeof data === 'object' ? data : {};
   const calendars = Array.isArray(source.calendars) ? source.calendars : [];
   const events = Array.isArray(source.events) ? source.events : [];
+  const settings = source.settings && typeof source.settings === 'object' ? source.settings : {};
+  const display = settings.display && typeof settings.display === 'object' ? settings.display : {};
   return {
     calendars,
     events,
     settings: {
-      weekStart: source.settings?.weekStart === 0 ? 0 : 1,
+      weekStart: [0, 1, 6].includes(Number(settings.weekStart)) ? Number(settings.weekStart) : 1,
+      schedule: Schedule.normalize(settings.schedule),
+      display: {
+        lunar: display.lunar !== false,
+        solarTerms: display.solarTerms !== false,
+      },
+      appearance:
+        settings.appearance && typeof settings.appearance === 'object'
+          ? settings.appearance
+          : {},
     },
   };
 }
 
 function weekStart() {
-  return state.settings.weekStart === 0 ? 0 : 1;
+  return state.settings.weekStart;
 }
 
 function calendarById(id) {
@@ -140,6 +169,18 @@ function calendarFor(event) {
 
 function isVisible(event) {
   return calendarFor(event).visible !== false;
+}
+
+function dayType(date) {
+  return Schedule.dayType(state.settings.schedule, date, weekStart());
+}
+
+function isRestDay(date) {
+  return dayType(date) === 'rest';
+}
+
+function isHalfDay(date) {
+  return dayType(date) === 'half';
 }
 
 function eventsOnDay(day) {
@@ -177,10 +218,25 @@ function upcomingEvents(limit) {
 
 function render() {
   document.body.dataset.type = widgetType;
+  Appearance.applyWidget(state.settings);
+  updateSizeClass();
   if (widgetType === 'today') renderToday();
   else if (widgetType === 'upcoming') renderUpcoming();
   else if (widgetType === 'monthAgenda') renderMonthAgenda();
   else renderMonth();
+  updateMenuLabels();
+}
+
+function updateSizeClass() {
+  const width = window.innerWidth;
+  const size = width < 420 ? 'xs' : width < 560 ? 'sm' : width < 720 ? 'md' : 'lg';
+  document.body.dataset.size = size;
+  document.body.dataset.locked = locked ? '1' : '0';
+}
+
+function updateMenuLabels() {
+  if (lockMenuButton) lockMenuButton.textContent = locked ? '解锁位置与尺寸' : '锁定位置与尺寸';
+  if (pinMenuButton) pinMenuButton.textContent = pinned ? '取消置顶' : '置顶';
 }
 
 function headerHTML(options = {}) {
@@ -231,9 +287,15 @@ function monthGridHTML(selectable = false) {
       const classes = ['w-day'];
       if (outside) classes.push('outside');
       if (sameDay(day, today)) classes.push('today');
+      if (!outside && isRestDay(day)) classes.push('rest');
+      if (!outside && isHalfDay(day)) classes.push('half');
       if (sameDay(day, selectedDate)) classes.push('selected');
-      const title = `${day.getMonth() + 1}月${day.getDate()}日 ${WEEKDAY_SHORT[day.getDay()]}`;
-      return `<button class="${classes.join(' ')}" data-date="${ymd(day)}" title="${title}${selectable ? ' · 单击选择' : ''}">
+      const title = `${day.getMonth() + 1}月${day.getDate()}日 ${WEEKDAY_SHORT[day.getDay()]}${
+        outside ? '' : isRestDay(day) ? ' · 休息' : isHalfDay(day) ? ' · 半天' : ' · 工作'
+      }`;
+      return `<button class="${classes.join(' ')}" data-date="${ymd(day)}" title="${title}${
+        selectable ? ' · 单击选择' : ''
+      }">
         <span class="num">${day.getDate()}</span>
         <span class="dots">${colors.map((color) => `<span class="w-dot" style="--dot-color:${color}"></span>`).join('')}</span>
       </button>`;
@@ -249,11 +311,24 @@ function renderMonth() {
     ${monthGridHTML(false)}`;
 }
 
+function lunarLineForToday(today) {
+  const display = state.settings.display;
+  const term = display.solarTerms ? Almanac.termOf(today) : null;
+  if (term) return term;
+  if (display.lunar) {
+    const lunar = Almanac.lunarOf(today);
+    if (lunar) return lunar.text;
+  }
+  return '';
+}
+
 function renderToday() {
   const today = new Date();
   const events = eventsOnDay(today);
   const shown = events.slice(0, 4);
   const hiddenCount = events.length - shown.length;
+  const rest = isRestDay(today);
+  const half = isHalfDay(today);
   const rows = shown
     .map((event) => {
       const calendar = calendarFor(event);
@@ -269,15 +344,21 @@ function renderToday() {
       </button>`;
     })
     .join('');
+  const moon = lunarLineForToday(today);
 
   content.className = 'widget-content w-today-content';
   content.innerHTML = `
     <div class="w-today-top">
       <button class="w-today-caption" data-action="open-day" title="在日历中打开今天">
-        <span class="w-today-label">今天</span>
+        <span class="w-today-label ${rest ? 'is-rest' : half ? 'is-half' : ''}">今天${
+          rest ? ' · 休息' : half ? ' · 半日' : ''
+        }</span>
         <span class="w-today-date">${today.getDate()}</span>
       </button>
-      <div class="w-today-meta"><strong>${today.getFullYear()}年</strong>${today.getMonth() + 1}月 · ${WEEKDAY_FULL[today.getDay()]}</div>
+      <div class="w-today-meta">
+        <strong>${today.getFullYear()}年</strong>${today.getMonth() + 1}月 · ${WEEKDAY_FULL[today.getDay()]}
+        ${moon ? `<span class="w-today-moon">${esc(moon)}</span>` : ''}
+      </div>
     </div>
     <div class="w-divider"></div>
     <div class="w-agenda">
@@ -347,6 +428,8 @@ function renderMonthAgenda() {
       : sameDay(selectedDate, addDays(today, -1))
         ? '昨天'
         : WEEKDAY_FULL[selectedDate.getDay()];
+  const selectedRest = isRestDay(selectedDate);
+  const selectedHalf = isHalfDay(selectedDate);
 
   content.className = 'widget-content w-large-content';
   content.innerHTML = `
@@ -355,7 +438,7 @@ function renderMonthAgenda() {
     <div class="w-large-agenda">
       <div class="w-large-head">
         <span class="w-large-day-title">${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日 ${WEEKDAY_FULL[selectedDate.getDay()]}</span>
-        <span class="w-large-day-sub">${relation}</span>
+        <span class="w-large-day-sub">${selectedRest ? '休息日' : selectedHalf ? '半日' : relation}</span>
       </div>
       <div class="w-large-list">
         ${rows || '<div class="w-large-empty">这一天没有日程</div>'}
@@ -442,10 +525,81 @@ closeButton.addEventListener('click', () => {
 function updatePinButton() {
   pinButton.classList.toggle('active', pinned);
   pinButton.title = pinned ? '取消置顶' : '固定在其它窗口上方';
+  updateMenuLabels();
 }
 
-document.getElementById('widget-card').addEventListener('contextmenu', (event) => {
+function applyLock() {
+  document.body.dataset.locked = locked ? '1' : '0';
+  card.dataset.locked = locked ? '1' : '0';
+  updateMenuLabels();
+}
+
+function showMenu(x, y) {
+  widgetMenu.classList.remove('hidden');
+  widgetMenu.style.left = '0px';
+  widgetMenu.style.top = '0px';
+  const rect = widgetMenu.getBoundingClientRect();
+  widgetMenu.style.left = `${clamp(x, 8, window.innerWidth - rect.width - 8)}px`;
+  widgetMenu.style.top = `${clamp(y, 8, window.innerHeight - rect.height - 8)}px`;
+}
+
+function hideMenu() {
+  widgetMenu.classList.add('hidden');
+}
+
+card.addEventListener('contextmenu', (event) => {
   event.preventDefault();
+  showMenu(event.clientX, event.clientY);
+});
+
+document.addEventListener('mousedown', (event) => {
+  if (!widgetMenu.contains(event.target)) hideMenu();
+});
+
+widgetMenu.addEventListener('mousedown', (event) => {
+  event.stopPropagation();
+});
+
+async function resizeWidget(width, height) {
+  try {
+    const result = await window.desktop.widget.setSize(width, height);
+    if (result) {
+      updateSizeClass();
+      render();
+    }
+  } catch {
+    // ignore
+  }
+  hideMenu();
+}
+
+widgetMenu.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  const action = button.dataset.action;
+  if (action === 'size-small') await resizeWidget(SIZE_PRESETS.small.width, SIZE_PRESETS.small.height);
+  else if (action === 'size-medium') await resizeWidget(SIZE_PRESETS.medium.width, SIZE_PRESETS.medium.height);
+  else if (action === 'size-large') await resizeWidget(SIZE_PRESETS.large.width, SIZE_PRESETS.large.height);
+  else if (action === 'size-default') {
+    const size = DEFAULT_SIZES[widgetType] || DEFAULT_SIZES.month;
+    await resizeWidget(size.width, size.height);
+  } else if (action === 'lock') {
+    locked = !locked;
+    applyLock();
+    await window.desktop.widget.setLock(locked);
+    hideMenu();
+  } else if (action === 'pin') {
+    pinned = !pinned;
+    updatePinButton();
+    window.desktop.widget.setPin(pinned);
+    hideMenu();
+  } else if (action === 'close') {
+    window.desktop.widget.close();
+  }
+});
+
+window.addEventListener('resize', () => {
+  updateSizeClass();
 });
 
 /* ------------------------------------------------------------------ */
@@ -467,6 +621,11 @@ window.desktop.widget.onPinChanged((value) => {
   updatePinButton();
 });
 
+window.desktop.widget.onLockChanged((value) => {
+  locked = Boolean(value);
+  applyLock();
+});
+
 setInterval(() => {
   const key = ymd(new Date());
   if (key !== lastDayKey) {
@@ -478,6 +637,7 @@ setInterval(() => {
 
 async function init() {
   updatePinButton();
+  applyLock();
   try {
     const data = await window.desktop.loadData();
     state = normalize(data);
@@ -497,8 +657,13 @@ window.__widgetTest = {
       type: widgetType,
       id: widgetId,
       pinned,
+      locked,
+      width: window.innerWidth,
+      height: window.innerHeight,
       events: state.events.length,
       days: document.querySelectorAll('.w-day').length,
+      restDays: document.querySelectorAll('.w-day.rest').length,
+      weekdayFirst: document.querySelector('.w-weekdays span')?.textContent || '',
       eventRows: document.querySelectorAll('[data-event-id]').length,
       monthTitle: document.querySelector('.w-title')?.textContent?.trim() || '',
     };

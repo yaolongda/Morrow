@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('desktop', {
   onNavigate: (callback) => subscribe('app:navigate', callback),
   onHidden: (callback) => subscribe('app:hidden', callback),
   openDataFolder: () => ipcRenderer.invoke('app:open-data-folder'),
+  openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
+  setWindowMaterial: (material) => ipcRenderer.invoke('window:set-material', material),
   quitApp: () => ipcRenderer.send('app:quit'),
 
   config: {
@@ -33,9 +35,12 @@ contextBridge.exposeInMainWorld('desktop', {
 
   widget: {
     setPin: (pin) => ipcRenderer.send('widget:set-pin', pin),
+    setSize: (width, height) => ipcRenderer.invoke('widget:set-size', { width, height }),
+    setLock: (locked) => ipcRenderer.invoke('widget:set-lock', locked),
     close: () => ipcRenderer.send('widget:close'),
     openMain: (payload) => ipcRenderer.send('widget:open-main', payload),
     onStoreChanged: (callback) => subscribe('store:changed', callback),
     onPinChanged: (callback) => subscribe('widget:pin-changed', callback),
+    onLockChanged: (callback) => subscribe('widget:lock-changed', callback),
   },
 });

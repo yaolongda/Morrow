@@ -56,7 +56,7 @@ function createSeedData() {
   });
 
   return {
-    version: 1,
+    version: 2,
     calendars: [
       { id: 'work', name: '工作', color: '#007AFF', visible: true },
       { id: 'personal', name: '个人', color: '#FF9500', visible: true },
@@ -85,11 +85,50 @@ function createSeedData() {
       timed('personal', '体检预约', 15, 8.5, 10, { location: '市第一医院' }),
       timed('personal', '读书会 · 《芯片战争》', 20, 19, 21, { location: '西西弗书店' }),
     ],
+    plans: [
+      {
+        id: 'seed-plan-1',
+        calendarId: 'work',
+        title: 'Q4 产品路线图',
+        start: day(-6),
+        end: day(34),
+        progress: 42,
+        notes: '梳理 Q4 目标与节奏，按阶段推进。可在计划编辑器中更新进度。',
+      },
+    ],
     settings: {
       weekStart: 1,
       defaultCalendarId: 'work',
       lastView: 'month',
       sidebarVisible: true,
+      schedule: {
+        preset: 'double',
+        restWeekdays: [0, 6],
+        halfWeekdays: [],
+        alternate: null,
+        cycle: null,
+        overrides: {},
+      },
+      appearance: {
+        theme: 'classic',
+        accent: '#FF3B30',
+        font: 'system',
+        material: 'none',
+        panelOpacity: 0.94,
+        glass: 8,
+        background: null,
+      },
+      display: {
+        lunar: true,
+        solarTerms: true,
+        almanac: false,
+        zodiac: false,
+      },
+      plans: {
+        showInMonth: true,
+        showInWeek: true,
+        reminders: true,
+      },
     },
   };
 }

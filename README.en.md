@@ -7,9 +7,9 @@
 
 > *Morrow* — the next day, the morning light.
 
-[中文](README.md) · [Offline HTML manual](README.html)
+**Morrow (朝暮)** is a macOS-inspired desktop calendar for Windows with four views, customizable work/rest rhythms, long-running project plans, four desktop widgets, and a full settings center. Local-first, built with Electron and vanilla JavaScript.
 
-**Morrow (朝暮)** is a macOS-inspired desktop calendar for Windows: month, week, day and year views, drag-to-create events, color-coded calendars, instant search, and four draggable desktop widgets. Local-first, crafted with Electron and vanilla JavaScript.
+[中文](README.md) · [Offline HTML manual](README.html) · [GitHub](https://github.com/yaolongda/Morrow)
 
 ![Month view](docs/month.png)
 
@@ -18,75 +18,68 @@
 Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 ```text
-朝暮-Morrow-Setup-1.0.0.exe
+朝暮-Morrow-Setup-1.0.1.exe
 ```
 
 - Windows 10 / 11, x64
-- Per-user installation; no administrator privileges required
+- Per-user install; no administrator privileges required
 - Desktop and Start Menu shortcuts are created automatically
-- Uninstall from Windows Settings; your calendar data is preserved
-- The build is unsigned. If SmartScreen appears, choose **More info → Run anyway**
+- Uninstall from Windows Settings; calendar data is preserved
+- Unsigned build — if SmartScreen appears, choose **More info → Run anyway**
 
-> The installer is about 107 MB. It is attached to GitHub Releases instead of being committed to the repository.
+## Highlights
 
-## Features
+### Calendar
 
-- **Four views** — month, week, day and year, with today highlighting, cross-month and all-day events.
-- **Event management** — create, edit and delete events with calendar, start/end time, all-day flag, location and notes.
-- **Fast creation** — drag a time range in week/day view, double-click a date in month view, or press `Ctrl + N`.
-- **Multiple calendars** — custom names and colors; show/hide individually; right-click to rename or delete.
-- **Search** — instant full-text search over titles, locations and notes.
-- **Config backup** — export/import a JSON bundle with calendars, events, settings and widget layout.
-- **Local-first** — atomic JSON persistence; no account, no network.
-- **Desktop widgets** — Month, Today, Upcoming, and Month & Agenda. Draggable, pinnable, closable, and synced with the main calendar.
+- Month, week, day and year views; all-day, multi-day and cross-month events.
+- Drag a time range to create an event; double-click a month date for a quick event.
+- Multiple color-coded calendars, show/hide, right-click rename/delete.
+- Instant search across titles, locations and notes.
+- Local-first JSON persistence with atomic writes.
 
-![Week view](docs/week.png)
+### Work rhythm
 
-## Desktop widgets
+- Choose the week start: **Monday / Sunday / Saturday**.
+- Rest-day presets: double day off, single day off, alternating big/small weeks, 3-on/1-off, Saturday half-day, Saturday half-day with alternating weekends, five days off per month (custom), or fully custom weekdays.
+- Override any date as rest, half-day or work, for holidays and make-up days.
+- Rest days are softly highlighted across every calendar view, the mini calendar and all desktop widgets, and stay in sync.
+
+![Work schedule](docs/settings-work.png)
+
+### Long-running plans
+
+- Plans have a start and end date and a progress value.
+- Automatically classified and styled as **short (cross-week)**, **medium (cross-month)** or **long (cross-year)**.
+- Subtle progress ribbons appear across the month; a dedicated plan band appears in week/day views.
+- Update progress with a slider. Crossing **20 / 50 / 75 / 80 / 90 / 100%** triggers a short classical Chinese poem of encouragement.
+- Gentle deadline reminders and an active-plan list in the sidebar.
+
+![Plan editor](docs/plan-editor.png)
+
+### Desktop widgets
+
+Month, Today, Upcoming, and Month & Agenda.
+
+- Drag to move; right-click to switch **small / medium / large** sizes or reset.
+- Resize freely from the window edge; **lock position and size** when done.
+- Pin above other windows or close. Position, size and lock state survive restarts.
+- Today widget shows the lunar date and solar term; rest days and half-days are highlighted in every widget.
+- Click a date or event to open it in the main calendar.
 
 ![Desktop widgets](docs/widgets-showcase.png)
 
-- Hover for pin/close controls; drag the card to move it; position is remembered.
-- Widgets stay behind normal windows by default, or can be pinned above them.
-- Click a date or event in a widget to open it in the main calendar.
+### Settings center
 
-## Backup & migration
+Open with the gear button or `Ctrl + ,`.
 
-Open the **⋯** menu in the toolbar:
+- **General**: week start, sidebar, config export/import, data folder.
+- **Work schedule**: presets, custom weekdays, special-date overrides.
+- **Appearance**: three themes, accent color, six font choices, Windows 11 Mica/Acrylic, panel opacity, glass blur, and a custom background image with opacity/blur/dim controls.
+- **Display**: lunar date, 24 solar terms, almanac auspicious/inauspicious activities, zodiac fortune, plan visibility.
+- **Plans**: plan types, active plans, create new.
+- **About**: version, slogan, project homepage, update link.
 
-- **Export config…** writes a `.json` backup containing calendars, events, settings and widget layout.
-- **Import config…** shows what will be overwritten before replacing your data.
-- You can also import a raw `calendar-data.json` from the data directory.
-- Importing cannot be undone; export a backup first.
-
-## Build from source
-
-```powershell
-npm install
-npm start
-```
-
-If the Electron binary download is slow, set the mirror first:
-
-```powershell
-$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-$env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-builder-binaries/"
-npm install
-```
-
-Build the installer:
-
-```powershell
-npm run dist
-# dist\朝暮-Morrow-Setup-1.0.0.exe
-```
-
-Build the portable folder:
-
-```powershell
-npm run build:portable
-# release\朝暮-win32-x64\朝暮.exe
-```
+![Appearance](docs/settings-appearance.png)
 
 ## Shortcuts
 
@@ -96,47 +89,76 @@ npm run build:portable
 | `D` / `W` / `M` / `Y` | Day / Week / Month / Year view |
 | `←` / `→` | Previous / next range |
 | `Ctrl + N` | New event |
+| `P` | New plan |
 | `Ctrl + F` or `/` | Search |
-| `Ctrl + Enter` | Save event (editor open) |
-| `Esc` | Close dialog / search results |
+| `Ctrl + ,` | Settings |
+| `Ctrl + Enter` | Save event / plan |
+| `Esc` | Close dialog / search |
+
+## Build from source
+
+```powershell
+npm install
+npm start
+```
+
+Optional mirror for slow Electron downloads:
+
+```powershell
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-builder-binaries/"
+npm install
+```
+
+Build:
+
+```powershell
+npm run dist
+# dist\朝暮-Morrow-Setup-1.0.1.exe
+
+npm run build:portable
+# release\朝暮-win32-x64\朝暮.exe
+```
 
 ## Data
 
 ```text
 %APPDATA%\朝暮\
-├─ calendar-data.json    # calendars and events
-├─ widgets.json          # widget layout and pin state
+├─ calendar-data.json    # calendars, events, plans and settings
+├─ widgets.json          # widget position, size, pin and lock
 └─ window-state.json     # main window bounds
 ```
 
-No network access, no telemetry, no account. Uninstalling preserves this data.
+No network access, no telemetry. Uninstalling preserves the data directory.
 
 ## Tech
 
 - Electron 45
-- Vanilla HTML/CSS/JavaScript; no frontend framework and no runtime NPM dependencies
+- Vanilla HTML/CSS/JavaScript, no frontend framework, no runtime NPM dependencies
+- Browser Intl Chinese calendar + solar-longitude solar terms
 - Chromium DevTools Protocol end-to-end tests
 - electron-builder + NSIS
-- Atomic local JSON storage
 
 ## Tests
 
 ```powershell
 npm test
+npm run test:features
 npm run test:widgets
 ```
 
-27 checks cover event CRUD, persistence, search, calendar visibility, drag-to-create, config export/import (including widget layout), widget pin/close/layout, live sync, and restart persistence.
+42 automated checks: 23 core, 15 feature, 4 widget-restart. Coverage includes work/rest presets, week start, half-days, date overrides, plan milestones, settings, widget resize/lock/sync, config import/export and restart persistence.
 
 ## Known limitations
 
-- Light theme only; recurring events, reminders and cloud sync are not implemented yet.
-- Weeks start on Monday.
-- Widgets are separate windows; pinned widgets float above other apps.
+- Almanac and zodiac content is generated locally for cultural/entertainment reference.
+- Mica/Acrylic requires Windows 11.
+- No sync, team sharing, notifications, recurring events or week numbers yet.
 - Builds are unsigned.
+- Widgets are separate windows and float above other apps when pinned.
 
 ## License
 
 [MIT](LICENSE) © 2026 yaolongda
 
-Inspired by Apple Calendar and macOS Sonoma desktop widgets. This is an independent implementation and is not affiliated with Apple.
+Inspired by Apple Calendar and macOS Sonoma widgets. Independent implementation, not affiliated with Apple.

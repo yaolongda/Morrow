@@ -158,8 +158,8 @@ function widgetPosition(type) {
     .map((item) => ({
       x: item.x,
       y: item.y,
-      width: WIDGET_SIZES[item.type].width,
-      height: WIDGET_SIZES[item.type].height,
+      width: Math.max(300, Math.round(item.width || WIDGET_SIZES[item.type].width)),
+      height: Math.max(300, Math.round(item.height || WIDGET_SIZES[item.type].height)),
     }));
 
   const overlaps = (x, y) =>
@@ -201,26 +201,30 @@ function createWidgetWindow(config, options = {}) {
   const size = WIDGET_SIZES[config.type];
   if (!size) return null;
 
+  const width = Math.max(300, Math.min(1600, Math.round(config.width || size.width)));
+  const height = Math.max(300, Math.min(1400, Math.round(config.height || size.height)));
+  config.width = width;
+  config.height = height;
+
   const fallback = widgetPosition(config.type);
   const x = typeof config.x === 'number' ? config.x : fallback.x;
   const y = typeof config.y === 'number' ? config.y : fallback.y;
   const positioned =
-    isPositionVisible(x, y, size.width, size.height) ? { x, y } : fallback;
+    isPositionVisible(x, y, width, height) ? { x, y } : fallback;
 
   const win = new BrowserWindow({
-    width: size.width,
-    height: size.height,
+    width,
+    height,
     x: positioned.x,
     y: positioned.y,
-    minWidth: size.width,
-    minHeight: size.height,
-    maxWidth: size.width,
-    maxHeight: size.height,
+    minWidth: 300,
+    minHeight: 300,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
     hasShadow: false,
-    resizable: false,
+    resizable: !config.locked,
+    movable: !config.locked,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -246,6 +250,9 @@ function createWidgetWindow(config, options = {}) {
       type: config.type,
       id: config.id,
       pin: config.pin ? '1' : '0',
+      locked: config.locked ? '1' : '0',
+      width: String(config.width),
+      height: String(config.height),
     },
   });
 
@@ -270,6 +277,15 @@ function createWidgetWindow(config, options = {}) {
     schedulePersistWidgets();
   });
 
+  win.on('resized', () => {
+    const bounds = win.getBounds();
+    config.x = bounds.x;
+    config.y = bounds.y;
+    config.width = bounds.width;
+    config.height = bounds.height;
+    schedulePersistWidgets();
+  });
+
   win.on('closed', () => {
     widgetWindows.delete(config.id);
     if (!isQuitting) {
@@ -290,7 +306,10 @@ function addWidget(type, options = {}) {
     type,
     x: options.x ?? position.x,
     y: options.y ?? position.y,
+    width: options.width ?? WIDGET_SIZES[type].width,
+    height: options.height ?? WIDGET_SIZES[type].height,
     pin: Boolean(options.pin),
+    locked: Boolean(options.locked),
   };
   widgetConfigs.push(config);
   persistWidgets();
@@ -326,7 +345,14 @@ function importWidgets(configs) {
       type: item.type,
       x: Number.isFinite(item.x) ? Math.round(item.x) : undefined,
       y: Number.isFinite(item.y) ? Math.round(item.y) : undefined,
+      width: Number.isFinite(item.width)
+        ? Math.max(300, Math.min(1600, Math.round(item.width)))
+        : WIDGET_SIZES[item.type].width,
+      height: Number.isFinite(item.height)
+        ? Math.max(300, Math.min(1400, Math.round(item.height)))
+        : WIDGET_SIZES[item.type].height,
       pin: Boolean(item.pin),
+      locked: Boolean(item.locked),
     };
     if (config.x == null || config.y == null) {
       const position = widgetPosition(config.type);
@@ -615,6 +641,28 @@ function registerIpc() {
 
   ipcMain.handle('app:open-data-folder', () => shell.openPath(path.dirname(storePath)));
 
+  ipcMain.handle('app:open-external', async (_event, url) => {
+    if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return false;
+    try {
+      await shell.openExternal(url);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('window:set-material', (_event, material) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (!['none', 'mica', 'acrylic', 'tabbed', 'auto'].includes(material)) return false;
+    try {
+      mainWindow.setBackgroundMaterial(material);
+      mainWindow.setBackgroundColor(material === 'none' ? '#ffffff' : '#00000000');
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.on('app:quit', () => {
     isQuitting = true;
     app.quit();
@@ -629,7 +677,16 @@ function registerIpc() {
   });
 
   ipcMain.handle('widgets:list', () =>
-    widgetConfigs.map(({ id, type, x, y, pin }) => ({ id, type, x, y, pin }))
+    widgetConfigs.map(({ id, type, x, y, width, height, pin, locked }) => ({
+      id,
+      type,
+      x,
+      y,
+      width,
+      height,
+      pin,
+      locked,
+    }))
   );
 
   ipcMain.handle('widgets:add', (_event, type) => addWidget(type));
@@ -652,6 +709,47 @@ function registerIpc() {
     persistWidgets();
     event.sender.send('widget:pin-changed', config.pin);
     broadcastWidgetsChanged();
+  });
+
+  ipcMain.handle('widget:set-size', (event, size) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const config = widgetConfigs.find((item) => item.id === win.__widgetId);
+    if (!config) return null;
+    const width = Math.max(300, Math.min(1600, Math.round(Number(size?.width) || 0)));
+    const height = Math.max(300, Math.min(1400, Math.round(Number(size?.height) || 0)));
+    const bounds = win.getBounds();
+    const area = screen.getDisplayMatching(bounds).workArea;
+    const x = Math.min(
+      Math.max(bounds.x, area.x + 8),
+      Math.max(area.x + 8, area.x + area.width - width - 8)
+    );
+    const y = Math.min(
+      Math.max(bounds.y, area.y + 8),
+      Math.max(area.y + 8, area.y + area.height - height - 8)
+    );
+    win.setBounds({ x, y, width, height }, true);
+    config.x = x;
+    config.y = y;
+    config.width = width;
+    config.height = height;
+    persistWidgets();
+    broadcastWidgetsChanged();
+    return { width, height };
+  });
+
+  ipcMain.handle('widget:set-lock', (event, locked) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+    const config = widgetConfigs.find((item) => item.id === win.__widgetId);
+    if (!config) return false;
+    config.locked = Boolean(locked);
+    win.setMovable(!config.locked);
+    win.setResizable(!config.locked);
+    persistWidgets();
+    broadcastWidgetsChanged();
+    event.sender.send('widget:lock-changed', config.locked);
+    return true;
   });
 
   ipcMain.on('widget:close', (event) => {

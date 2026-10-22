@@ -1,0 +1,194 @@
+/* 休息日 */
+
+.w-day.rest .num {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: color-mix(in srgb, var(--accent) 62%, #59575e);
+}
+
+.w-day.rest.today .num {
+  background: var(--accent);
+  color: #fff;
+}
+
+.w-day.half .num {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.w-today-label.is-rest {
+  color: #6c8a6e;
+}
+
+.w-today-label.is-half {
+  color: #b08a3e;
+}
+
+.w-today-moon {
+  display: block;
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--accent) 62%, #6d6b73);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* 右键菜单 */
+
+.widget-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 174px;
+  padding: 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 32px rgba(20, 15, 25, 0.24), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-app-region: no-drag;
+}
+
+.widget-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 5px;
+  color: #333238;
+  font-size: 10.5px;
+  text-align: left;
+}
+
+.widget-menu button:hover {
+  background: #f2f0f5;
+}
+
+.widget-menu .danger {
+  color: #d94848;
+}
+
+.widget-menu-sep {
+  height: 1px;
+  margin: 4px 5px;
+  background: #ebe8ee;
+}
+
+.widget-menu.hidden {
+  display: none;
+}
+
+.widget-card[data-locked="1"] {
+  -webkit-app-region: no-drag;
+}
+
+body[data-locked="1"] .w-head,
+body[data-locked="1"] .w-title {
+  cursor: default;
+}
+
+.resize-hint {
+  position: absolute;
+  right: 27px;
+  bottom: 27px;
+  z-index: 5;
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 2px,
+    rgba(0, 0, 0, 0.22) 2px 3px
+  );
+  transition: opacity 0.15s ease;
+}
+
+.widget-card:hover .resize-hint {
+  opacity: 0.55;
+}
+
+body[data-locked="1"] .resize-hint {
+  display: none;
+}
+
+/* 尺寸适配 */
+
+body[data-size="xs"] .widget-content {
+  padding: 12px 13px 11px;
+}
+
+body[data-size="xs"] .w-title {
+  font-size: 13px;
+}
+
+body[data-size="xs"] .w-day {
+  font-size: 10px;
+}
+
+body[data-size="xs"] .w-day .num {
+  width: 20px;
+  height: 20px;
+}
+
+body[data-size="xs"] .w-today-date {
+  font-size: 54px;
+}
+
+body[data-size="xs"] .w-today-meta {
+  font-size: 9px;
+}
+
+body[data-size="xs"] .w-event {
+  min-height: 30px;
+  padding: 4px 5px;
+}
+
+body[data-size="md"] .w-day {
+  font-size: 12.5px;
+}
+
+body[data-size="md"] .w-day .num {
+  width: 26px;
+  height: 26px;
+}
+
+body[data-size="md"] .w-today-date {
+  font-size: 82px;
+}
+
+body[data-size="md"] .w-event-title {
+  font-size: 12.5px;
+}
+
+body[data-size="lg"] .widget-content {
+  padding: 22px 26px 20px;
+}
+
+body[data-size="lg"] .w-day {
+  font-size: 14px;
+}
+
+body[data-size="lg"] .w-day .num {
+  width: 30px;
+  height: 30px;
+}
+
+body[data-size="lg"] .w-today-date {
+  font-size: 108px;
+}
+
+body[data-size="lg"] .w-event-title {
+  font-size: 14px;
+}
+
+body[data-size="lg"] .w-event-meta {
+  font-size: 11px;
+}
+
+body[data-size="lg"] .w-up-title {
+  font-size: 14px;
+}
+
+body[data-size="lg"] .w-up-day {
+  font-size: 23px;
+}
+
+body[data-size="lg"] .w-title {
+  font-size: 17px;
+}

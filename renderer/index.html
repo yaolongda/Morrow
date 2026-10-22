@@ -9,8 +9,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>朝暮</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="features.css" />
 </head>
 <body>
+  <div id="app-background" aria-hidden="true">
+    <div id="bg-image"></div>
+    <div id="bg-dim"></div>
+  </div>
   <div class="app">
     <header class="titlebar">
       <div class="tb-left">
@@ -54,6 +59,15 @@
             <circle cx="5.6" cy="12" r="1.5" fill="currentColor" stroke="none" />
             <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
             <circle cx="18.4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <button class="icon-btn" id="settings-btn" title="设置 (Ctrl+,)" aria-label="设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+            <circle cx="9" cy="6.5" r="1.9" fill="#fff" />
+            <circle cx="15.5" cy="12" r="1.9" fill="#fff" />
+            <circle cx="8" cy="17.5" r="1.9" fill="#fff" />
           </svg>
         </button>
 
@@ -111,6 +125,18 @@
           </div>
           <div class="calendar-list" id="calendar-list"></div>
         </section>
+
+        <section class="plan-section">
+          <div class="section-head">
+            <span>进行中的计划</span>
+            <button class="section-add" id="add-plan-btn" title="新建计划" aria-label="新建计划">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </div>
+          <div class="plan-list" id="plan-list"></div>
+        </section>
+
+        <div class="day-brief" id="day-brief"></div>
 
         <footer class="sidebar-footer">
           <span class="local-dot"></span>
@@ -245,7 +271,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
         </button>
       </div>
-      <p class="widget-intro">把日历放到桌面上。拖动小组件可任意摆放，悬停时还能固定在最前或关闭。</p>
+      <p class="widget-intro">把日历放到桌面上。拖动卡片可移动，拖动窗口边缘或右键选择尺寸；悬停可置顶或关闭，右键还能锁定位置。</p>
       <div class="widget-gallery" id="widget-gallery"></div>
       <p class="widget-tip">提示：小组件与主日历实时同步，修改后无需手动刷新。</p>
     </div>
@@ -257,16 +283,128 @@
   </div>
 
   <div class="context-menu app-menu hidden" id="app-menu" role="menu">
+    <button data-action="new-plan" role="menuitem">新建计划…</button>
+    <button data-action="new-event" role="menuitem">新建日程…</button>
+    <div class="menu-separator"></div>
     <button data-action="export-config" role="menuitem">导出配置…</button>
     <button data-action="import-config" role="menuitem">导入配置…</button>
     <div class="menu-separator"></div>
+    <button data-action="open-settings" role="menuitem">设置…</button>
+    <button data-action="open-about" role="menuitem">关于朝暮</button>
     <button data-action="open-data" role="menuitem">打开数据文件夹</button>
     <div class="menu-separator"></div>
     <button data-action="quit-app" class="menu-danger" role="menuitem">退出朝暮</button>
   </div>
 
+  <!-- 设置中心 -->
+  <div class="overlay settings-overlay hidden" id="settings-overlay">
+    <div class="settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <aside class="settings-nav">
+        <div class="settings-brand">
+          <span>朝暮</span>
+          <em>设置</em>
+        </div>
+        <button data-section="general" class="active">通用</button>
+        <button data-section="schedule">工作时间</button>
+        <button data-section="appearance">外观</button>
+        <button data-section="display">显示</button>
+        <button data-section="plans">计划</button>
+        <button data-section="about">关于</button>
+        <div class="settings-nav-footer" id="settings-version">v1.0.1</div>
+      </aside>
+      <section class="settings-pane">
+        <header class="settings-head">
+          <h2 id="settings-title">通用</h2>
+          <button class="icon-btn" id="settings-close" aria-label="关闭设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </header>
+        <div class="settings-content" id="settings-content"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 计划编辑 -->
+  <div class="overlay hidden" id="plan-overlay">
+    <div class="dialog plan-dialog" role="dialog" aria-modal="true" aria-labelledby="plan-dialog-title">
+      <div class="dialog-top">
+        <button class="text-btn" id="plan-cancel">取消</button>
+        <span class="dialog-heading" id="plan-dialog-title">新建计划</span>
+        <button class="primary-btn" id="plan-save">完成</button>
+      </div>
+      <div class="plan-body">
+        <input class="title-input" id="plan-title" maxlength="120" placeholder="计划名称" autocomplete="off" />
+        <div class="plan-type-line" id="plan-type">短期计划 · 跨周</div>
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.4" y="5" width="17.2" height="15.4" rx="3" />
+            <path d="M8 3.4v3.4M16 3.4v3.4M3.8 9.4h16.4" />
+          </svg>
+          <div class="field-content">
+            <div class="date-lines">
+              <div class="date-line">
+                <span class="date-label">开始</span>
+                <input type="date" id="plan-start" />
+              </div>
+              <div class="date-line">
+                <span class="date-label">结束</span>
+                <input type="date" id="plan-end" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.4" y="5" width="17.2" height="15.4" rx="3" />
+            <path d="M8 3.4v3.4M16 3.4v3.4M3.8 9.4h16.4" />
+          </svg>
+          <div class="field-content calendar-select-line">
+            <span class="select-dot" id="plan-calendar-dot"></span>
+            <select id="plan-calendar" aria-label="计划所属日历"></select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 18.5 9 6l5.5 12.5M6.2 14h5.6M15.5 12h5M18 9.5v5" />
+          </svg>
+          <div class="field-content">
+            <div class="plan-progress-head">
+              <span>计划进度</span>
+              <strong id="plan-progress-value">0%</strong>
+            </div>
+            <input class="plan-range" type="range" id="plan-progress" min="0" max="100" step="1" value="0" />
+            <div class="plan-milestones">
+              <span style="left:20%">20</span><span style="left:50%">50</span>
+              <span style="left:75%">75</span><span style="left:80%">80</span>
+              <span style="left:90%">90</span><span style="left:100%">完成</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row notes-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 4.6h14M5 9.4h14M5 14.2h14M5 19h9" />
+          </svg>
+          <textarea class="field-input notes-input" id="plan-notes" rows="3" maxlength="2000" placeholder="计划备注"></textarea>
+        </div>
+      </div>
+      <div class="event-footer">
+        <button class="danger-link hidden" id="plan-delete">删除计划</button>
+        <span class="save-hint">Ctrl + Enter 保存</span>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
 
+  <script src="lib/schedule.js"></script>
+  <script src="lib/almanac.js"></script>
+  <script src="appearance.js"></script>
+  <script src="plans.js"></script>
+  <script src="settings.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

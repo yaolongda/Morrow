@@ -2118,11 +2118,14 @@ svg {
   bottom: 28px;
   left: 50%;
   z-index: 300;
+  max-width: min(640px, 82vw);
   padding: 8px 15px;
   border-radius: 20px;
   background: rgba(30, 28, 33, 0.9);
   color: #ffffff;
   font-size: 11.5px;
+  line-height: 1.55;
+  text-align: center;
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 8px);
