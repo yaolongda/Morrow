@@ -7,7 +7,7 @@
 
 > *Morrow* — the next day, the morning light.
 
-**Morrow (朝暮)** is a macOS-inspired desktop calendar for Windows with four views, customizable work/rest rhythms, long-running project plans, four desktop widgets, and a full settings center. Local-first, built with Electron and vanilla JavaScript.
+**Morrow (朝暮)** is a macOS-inspired desktop calendar for Windows with four views, flexible recurring events, customizable work/rest rhythms and shift hours, long-running project plans, Chinese statutory holidays, four desktop widgets, and a full settings center. Local-first, built with Electron and vanilla JavaScript.
 
 [中文](README.md) · [Offline HTML manual](README.html) · [GitHub](https://github.com/yaolongda/Morrow)
 
@@ -18,7 +18,7 @@
 Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 ```text
-朝暮-Morrow-Setup-1.0.1.exe
+朝暮-Morrow-Setup-1.1.0.exe
 ```
 
 - Windows 10 / 11, x64
@@ -37,6 +37,32 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 - Instant search across titles, locations and notes.
 - Local-first JSON persistence with atomic writes.
 
+### Recurring events
+
+- Seven presets: **daily, every weekday, weekly (pick any days), every two weeks, monthly, quarterly, yearly**.
+- Optional repeat end date; leave it empty to repeat indefinitely.
+- When editing a recurring event, choose **This event** or **All events**: the former changes or deletes only one occurrence, the latter updates the whole series (changing the date shifts the series).
+- Occurrences expand automatically in every view and in all four desktop widgets, marked with ↻.
+- Search jumps to the next upcoming occurrence instead of the series' first date.
+
+### Shift hours and off-work celebrations
+
+- Set the shift in **Settings → Work schedule**: **morning + afternoon**, **all day**, or **night shift**, with exact start/end times.
+- The Today widget shows a live countdown to work, lunch, and the end of the day; on rest days it simply says "rest well".
+- Lunch break gets a small, quiet celebration. Finishing work gets a fuller particle animation and a short poem.
+- If tomorrow is a weekend or statutory holiday, the last workday celebration is upgraded automatically.
+- Night shifts cross midnight; the celebration happens when the shift ends in the morning.
+- Celebrations live only inside the Today widget — no system notifications, no interruptions.
+
+![Shift hours](docs/settings-work-hours.png)
+
+### Chinese statutory holidays
+
+- Bundled 2024–2026 holiday and make-up workday arrangements: holidays automatically become rest days, make-up days become workdays.
+- Holiday names appear in the month view; the settings calendar marks them with a dot.
+- Special-date overrides win: click a holiday and set it to "work" when you have to work through it.
+- Holiday syncing can be turned off in Settings → Work schedule.
+
 ### Work rhythm
 
 - Choose the week start: **Monday / Sunday / Saturday**.
@@ -51,8 +77,10 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 - Plans have a start and end date and a progress value.
 - Automatically classified and styled as **short (cross-week)**, **medium (cross-month)** or **long (cross-year)**.
 - Subtle progress ribbons appear across the month; a dedicated plan band appears in week/day views.
-- Update progress with a slider. Crossing **20 / 50 / 75 / 80 / 90 / 100%** triggers a short classical Chinese poem of encouragement.
-- Gentle deadline reminders and an active-plan list in the sidebar.
+- **Time-based progress**: new plans advance automatically with the calendar; switch it off to update progress by hand.
+- **Custom reminder nodes**: add dates such as "first milestone review"; on the day, a gentle card with a poem appears — no system notification.
+- Crossing **20 / 50 / 75 / 80 / 90 / 100%** triggers a short classical Chinese poem of encouragement.
+- Gentle deadline reminders and an active-plan list (with today's node) in the sidebar.
 
 ![Plan editor](docs/plan-editor.png)
 
@@ -60,11 +88,14 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 Month, Today, Upcoming, and Month & Agenda.
 
-- Drag to move; right-click to switch **small / medium / large** sizes or reset.
-- Resize freely from the window edge; **lock position and size** when done.
-- Pin above other windows or close. Position, size and lock state survive restarts.
-- Today widget shows the lunar date and solar term; rest days and half-days are highlighted in every widget.
+- Drag to move; **no fixed small/medium/large presets** — resize freely from the bottom-right grip or window edges.
+- Layout adapts to size: month and agenda sit side by side when wide, stack when narrow; type scale and visible rows follow.
+- Widgets follow the global theme, accent, font, panel opacity, blur, and background image, with subtle entrance animations.
+- **Lock position and size** when done; pin above other windows or close. State survives restarts.
+- The Today widget shows lunar date, solar term, work countdown, and plays an off-work celebration.
 - Click a date or event to open it in the main calendar.
+
+![Off-work celebration](docs/widget-celebration.png)
 
 ![Desktop widgets](docs/widgets-showcase.png)
 
@@ -73,7 +104,7 @@ Month, Today, Upcoming, and Month & Agenda.
 Open with the gear button or `Ctrl + ,`.
 
 - **General**: week start, sidebar, config export/import, data folder.
-- **Work schedule**: presets, custom weekdays, special-date overrides.
+- **Work schedule**: rest presets, custom weekdays, shift hours, statutory holiday sync, special-date overrides and overtime.
 - **Appearance**: three themes, accent color, six font choices, Windows 11 Mica/Acrylic, panel opacity, glass blur, and a custom background image with opacity/blur/dim controls.
 - **Display**: lunar date, 24 solar terms, almanac auspicious/inauspicious activities, zodiac fortune, plan visibility.
 - **Plans**: plan types, active plans, create new.
@@ -114,7 +145,7 @@ Build:
 
 ```powershell
 npm run dist
-# dist\朝暮-Morrow-Setup-1.0.1.exe
+# dist\朝暮-Morrow-Setup-1.1.0.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe
@@ -136,6 +167,7 @@ No network access, no telemetry. Uninstalling preserves the data directory.
 - Electron 45
 - Vanilla HTML/CSS/JavaScript, no frontend framework, no runtime NPM dependencies
 - Browser Intl Chinese calendar + solar-longitude solar terms
+- Bundled Chinese statutory holiday data (chinese-days, MIT)
 - Chromium DevTools Protocol end-to-end tests
 - electron-builder + NSIS
 
@@ -147,13 +179,14 @@ npm run test:features
 npm run test:widgets
 ```
 
-42 automated checks: 23 core, 15 feature, 4 widget-restart. Coverage includes work/rest presets, week start, half-days, date overrides, plan milestones, settings, widget resize/lock/sync, config import/export and restart persistence.
+59 automated checks: 23 core, 32 feature, 4 widget-restart. Coverage includes work/rest presets, statutory holidays, shift hours and celebration intensity, recurring event expansion and edit scope, plan auto-progress and reminder nodes, settings, widget free resize / theme / responsive layout / celebration animation, config import/export and restart persistence.
 
 ## Known limitations
 
 - Almanac and zodiac content is generated locally for cultural/entertainment reference.
+- Holiday data covers 2024–2026 (chinese-days, MIT); later years fall back to normal weekend rules and can be supplemented with special dates.
 - Mica/Acrylic requires Windows 11.
-- No sync, team sharing, notifications, recurring events or week numbers yet.
+- No sync, team sharing, system notifications or week numbers yet.
 - Builds are unsigned.
 - Widgets are separate windows and float above other apps when pinned.
 

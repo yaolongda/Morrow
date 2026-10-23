@@ -56,7 +56,7 @@ function createSeedData() {
   });
 
   return {
-    version: 2,
+    version: 3,
     calendars: [
       { id: 'work', name: '工作', color: '#007AFF', visible: true },
       { id: 'personal', name: '个人', color: '#FF9500', visible: true },
@@ -64,10 +64,27 @@ function createSeedData() {
       { id: 'birthday', name: '生日', color: '#AF52DE', visible: true },
     ],
     events: [
-      timed('work', '月度复盘', -8, 15, 16, { location: '线上 · 飞书' }),
+      timed('work', '月度复盘', -8, 15, 16, {
+        location: '线上 · 飞书',
+        recurrence: {
+          freq: 'monthly',
+          interval: 1,
+          weekdays: [],
+          until: null,
+          exceptions: [],
+        },
+      }),
       timed('work', '设计评审 · v2.3', -4, 14, 15.5, { location: '线上 · 飞书' }),
       allDay('work', '项目里程碑', -1),
-      timed('work', '每日站会', 0, 9.5, 10),
+      timed('work', '每日站会', 0, 9.5, 10, {
+        recurrence: {
+          freq: 'weekly',
+          interval: 1,
+          weekdays: [1, 2, 3, 4, 5],
+          until: null,
+          exceptions: [],
+        },
+      }),
       timed('work', '产品评审会', 0, 10.5, 12, {
         location: '3F 会议室「远山」',
         notes: '确认 Q4 路线图与设计稿终版，带上数据看板。',
@@ -108,6 +125,18 @@ function createSeedData() {
         alternate: null,
         cycle: null,
         overrides: {},
+        followHolidays: true,
+      },
+      workHours: {
+        enabled: true,
+        mode: 'split',
+        morning: { start: '09:00', end: '12:00' },
+        afternoon: { start: '13:00', end: '18:00' },
+        full: { start: '09:00', end: '18:00' },
+        night: { start: '21:00', end: '06:00' },
+        celebrate: true,
+        lunch: true,
+        off: true,
       },
       appearance: {
         theme: 'classic',

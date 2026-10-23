@@ -118,6 +118,7 @@
             }
           : null,
       overrides: cleanOverrides(source.overrides),
+      followHolidays: source.followHolidays !== false,
     };
   }
 
@@ -190,6 +191,12 @@
     const key = ymd(date);
     if (schedule.overrides[key]) return schedule.overrides[key];
 
+    if (schedule.followHolidays && window.Holidays) {
+      const holiday = window.Holidays.info(key);
+      if (holiday?.type === 'holiday') return 'rest';
+      if (holiday?.type === 'workday') return 'work';
+    }
+
     if (schedule.cycle && schedule.cycle.work + schedule.cycle.rest > 0) {
       const total = schedule.cycle.work + schedule.cycle.rest;
       const diff = daysBetween(parseYmd(schedule.cycle.anchor), date);
@@ -249,6 +256,7 @@
       }
     }
     if (overrideCount > 0) text += ` · ${overrideCount} 个特殊日期`;
+    if (schedule.followHolidays) text += ' · 同步法定节假日';
     return text;
   }
 

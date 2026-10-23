@@ -114,6 +114,10 @@ function formatTime(date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatLocal(date) {
+  return `${ymd(date)}T${formatTime(date)}`;
+}
+
 function formatMonthDay(date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
@@ -188,6 +192,9 @@ let view = 'month';
 let cursor = startOfDay(new Date());
 let sidebarVisible = true;
 let editingEventId = null;
+let editingOccurrenceDate = null;
+let editingScope = 'single';
+let editingSeriesRecurrence = null;
 let calendarDialogMode = 'add';
 let editingCalendarId = null;
 let contextCalendarId = null;
@@ -209,6 +216,7 @@ const confirmOverlay = $('#confirm-overlay');
 const widgetOverlay = $('#widget-overlay');
 const settingsOverlay = $('#settings-overlay');
 const planOverlay = $('#plan-overlay');
+const reminderOverlay = $('#reminder-overlay');
 const calendarMenu = $('#calendar-menu');
 const appMenu = $('#app-menu');
 const searchInput = $('#search-input');
@@ -274,6 +282,7 @@ function normalizeState(data) {
       allDay: event.allDay === true,
       location: typeof event.location === 'string' ? event.location.slice(0, 200) : '',
       notes: typeof event.notes === 'string' ? event.notes.slice(0, 2000) : '',
+      recurrence: Recurrence.normalize(event.recurrence),
     });
     if (events.length >= 20000) break;
   }
@@ -294,6 +303,27 @@ function normalizeState(data) {
     if (!id || seenPlans.has(id)) id = makeId('plan');
     seenPlans.add(id);
     const calendarId = calendarIds.has(plan.calendarId) ? plan.calendarId : calendars[0].id;
+    const reminders = [];
+    const seenReminders = new Set();
+    for (const reminder of Array.isArray(plan.reminders) ? plan.reminders : []) {
+      if (!reminder || typeof reminder !== 'object') continue;
+      const date = typeof reminder.date === 'string' ? reminder.date.slice(0, 10) : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const text = typeof reminder.text === 'string' ? reminder.text.trim() : '';
+      if (!text) continue;
+      let reminderId = reminder.id != null ? String(reminder.id) : '';
+      if (!reminderId || seenReminders.has(reminderId)) reminderId = makeId('rem');
+      seenReminders.add(reminderId);
+      reminders.push({ id: reminderId, date, text: text.slice(0, 120) });
+      if (reminders.length >= 30) break;
+    }
+    const milestonesSeen = [
+      ...new Set(
+        (Array.isArray(plan.milestonesSeen) ? plan.milestonesSeen : [])
+          .map(Number)
+          .filter((value) => Number.isInteger(value) && value >= 0 && value <= 100)
+      ),
+    ].sort((a, b) => a - b);
     plans.push({
       id,
       title: title.slice(0, 120),
@@ -301,6 +331,9 @@ function normalizeState(data) {
       end,
       calendarId,
       progress: clamp(Math.round(Number(plan.progress) || 0), 0, 100),
+      autoProgress: plan.autoProgress === true,
+      milestonesSeen,
+      reminders,
       notes: typeof plan.notes === 'string' ? plan.notes.slice(0, 2000) : '',
     });
     if (plans.length >= 500) break;
@@ -372,7 +405,7 @@ function normalizeState(data) {
   };
 
   return {
-    version: 2,
+    version: 3,
     calendars,
     events,
     plans,
@@ -382,6 +415,7 @@ function normalizeState(data) {
       lastView,
       sidebarVisible: sourceSettings.sidebarVisible !== false,
       schedule: Schedule.normalize(sourceSettings.schedule),
+      workHours: Workday.normalize(sourceSettings.workHours),
       appearance,
       display,
       plans: planSettings,
@@ -449,21 +483,26 @@ function compareEvents(a, b) {
   return String(a.title).localeCompare(String(b.title), 'zh-CN');
 }
 
+function withOccurrence(event, occurrence) {
+  return {
+    ...event,
+    start: occurrence.start,
+    end: occurrence.end,
+    occurrenceDate: occurrence.occurrenceDate,
+  };
+}
+
 function eventsOnDay(day) {
   const dayStart = startOfDay(day);
   const dayEnd = addDays(dayStart, 1);
-  return state.events
-    .filter(isEventVisible)
-    .filter((event) => {
-      const start = parseLocal(event.start);
-      const end = parseLocal(event.end);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
-      if (event.allDay) {
-        return dayStart >= startOfDay(start) && dayStart <= startOfDay(end);
-      }
-      return start < dayEnd && end > dayStart;
-    })
-    .sort(compareEvents);
+  const result = [];
+  for (const event of state.events) {
+    if (!isEventVisible(event)) continue;
+    for (const occurrence of Recurrence.expand(event, dayStart, dayEnd)) {
+      result.push(withOccurrence(event, occurrence));
+    }
+  }
+  return result.sort(compareEvents);
 }
 
 function plansOnDay(day) {
@@ -477,9 +516,16 @@ function plansOnDay(day) {
 
 function upcomingEvents(limit = 4) {
   const now = new Date();
-  return state.events
-    .filter(isEventVisible)
-    .filter((event) => parseLocal(event.end) >= now)
+  const horizon = addDays(startOfDay(now), 366);
+  const result = [];
+  for (const event of state.events) {
+    if (!isEventVisible(event)) continue;
+    for (const occurrence of Recurrence.expand(event, now, horizon)) {
+      if (parseLocal(occurrence.end) < now) continue;
+      result.push(withOccurrence(event, occurrence));
+    }
+  }
+  return result
     .sort((a, b) => parseLocal(a.start) - parseLocal(b.start))
     .slice(0, limit);
 }
@@ -494,6 +540,13 @@ function displayPrefs() {
 
 function dayHeadExtra(date) {
   const display = displayPrefs();
+  const holiday = window.Holidays?.info(date);
+  if (holiday?.type === 'holiday') {
+    return { text: holiday.name, isTerm: false, isHoliday: true };
+  }
+  if (holiday?.type === 'workday') {
+    return { text: '补班', isTerm: false, isMakeup: true };
+  }
   const term = display.solarTerms ? Almanac.termOf(date) : null;
   if (term) return { text: term, isTerm: true };
   if (display.lunar) {
@@ -523,8 +576,9 @@ function renderDayBrief() {
   const el = $('#day-brief');
   if (!el) return;
   const display = displayPrefs();
+  const workEnabled = state.settings.workHours?.enabled !== false;
   const visible =
-    display.lunar || display.solarTerms || display.almanac || display.zodiac;
+    display.lunar || display.solarTerms || display.almanac || display.zodiac || workEnabled;
   if (!visible) {
     el.classList.add('hidden');
     el.innerHTML = '';
@@ -533,10 +587,16 @@ function renderDayBrief() {
   const today = new Date();
   const brief = Almanac.briefOf(today);
   const term = nextTermInfo(today);
+  const holidayToday = window.Holidays?.info(today);
   const parts = [];
 
   parts.push(`<div class="brief-head">
     <span class="brief-date">${today.getMonth() + 1}月${today.getDate()}日</span>
+    ${
+      holidayToday
+        ? `<span class="brief-holiday">${esc(holidayToday.name)}</span>`
+        : ''
+    }
     <span class="brief-lunar">${display.lunar && brief.lunar ? esc(brief.lunar.text) : ''}</span>
   </div>`);
   if (display.lunar && brief.lunar) {
@@ -555,6 +615,19 @@ function renderDayBrief() {
   }
   if (display.zodiac) {
     parts.push(`<div class="brief-zodiac">${brief.zodiac.sign} <span class="brief-stars">${brief.zodiac.stars}</span><span class="brief-lucky">幸运色 ${brief.zodiac.luckyColor} · 数字 ${brief.zodiac.luckyNumber}</span></div>`);
+  }
+
+  const workSettings = {
+    schedule: state.settings.schedule,
+    weekStart: getWeekStart(),
+    workHours: state.settings.workHours,
+  };
+  const workStatus = Workday.statusFor(today, workSettings);
+  if (workStatus) {
+    parts.push(`<div class="brief-work ${esc(workStatus.state)}">
+      <span class="brief-work-label">${esc(workStatus.label)}</span>
+      <span class="brief-work-detail">${esc(workStatus.detail)}</span>
+    </div>`);
   }
 
   el.classList.remove('hidden');
@@ -667,13 +740,19 @@ function renderPlanList() {
     .map((plan) => {
       const meta = Plans.classify(plan);
       const color = Plans.colorFor(plan, state);
+      const progress = Plans.effectiveProgress(plan);
+      const node = Plans.planNodeToday(plan);
       return `<button class="side-plan" data-plan-id="${esc(plan.id)}" style="--plan-color:${color}">
         <span class="side-plan-top">
-          <span class="side-plan-title">${esc(plan.title)}</span>
-          <span class="side-plan-percent">${plan.progress}%</span>
+          <span class="side-plan-title">${esc(plan.title)}${
+            node ? '<span class="side-plan-node">今日节点</span>' : ''
+          }</span>
+          <span class="side-plan-percent">${progress}%</span>
         </span>
-        <span class="side-plan-track"><i style="width:${plan.progress}%"></i></span>
-        <span class="side-plan-meta">${meta.name} · ${plan.end.slice(5).replace('-', '/')} 截止</span>
+        <span class="side-plan-track"><i style="width:${progress}%"></i></span>
+        <span class="side-plan-meta">${meta.name} · ${plan.end.slice(5).replace('-', '/')} 截止${
+          plan.autoProgress ? ' · 自动' : ''
+        }</span>
       </button>`;
     })
     .join('');
@@ -707,6 +786,9 @@ function renderMonthView() {
     const rest = isRestDate(day);
     const half = isHalfDate(day);
     const extra = dayHeadExtra(day);
+    const holiday = window.Holidays?.info(day);
+    const holidayClass =
+      holiday?.type === 'holiday' ? 'is-holiday' : holiday?.type === 'workday' ? 'is-makeup' : '';
     const events = eventsOnDay(day);
     const plans = showPlans ? plansOnDay(day) : [];
 
@@ -728,21 +810,28 @@ function renderMonthView() {
         const start = parseLocal(event.start);
         const end = parseLocal(event.end);
         const timeLabel = event.allDay ? '全天' : `${formatTime(start)}–${formatTime(end)}`;
-        const tooltip = `${event.title} · ${timeLabel}${event.location ? ` · ${event.location}` : ''}`;
-        return `<button class="event-chip" data-event-id="${esc(event.id)}" style="--ev-color:${
+        const recurring = Recurrence.isRecurring(event);
+        const tooltip = `${event.title} · ${timeLabel}${recurring ? ' · 重复日程' : ''}${
+          event.location ? ` · ${event.location}` : ''
+        }`;
+        return `<button class="event-chip ${recurring ? 'is-recurring' : ''}" data-event-id="${esc(
+          event.id
+        )}" data-occurrence-date="${esc(event.occurrenceDate)}" style="--ev-color:${
           calendar.color
-        };--ev-text:${textColorOn(calendar.color)}" title="${esc(tooltip)}"><span class="chip-title">${esc(
-          event.title
-        )}</span></button>`;
+        };--ev-text:${textColorOn(calendar.color)}" title="${esc(tooltip)}">${
+          recurring ? '<span class="chip-repeat" aria-hidden="true">↻</span>' : ''
+        }<span class="chip-title">${esc(event.title)}</span></button>`;
       })
       .join('');
 
     return `<div class="month-day ${outside ? 'outside' : ''} ${isToday ? 'today' : ''} ${
       rest ? 'rest-day' : ''
-    } ${half ? 'half-day' : ''}" data-date="${ymd(day)}">
+    } ${half ? 'half-day' : ''} ${holidayClass}" data-date="${ymd(day)}">
       <div class="day-head">
         <button class="day-number" data-action="open-day" data-date="${ymd(day)}">${day.getDate()}</button>
-        ${extra ? `<span class="day-lunar ${extra.isTerm ? 'is-term' : ''}">${esc(extra.text)}</span>` : ''}
+        ${extra ? `<span class="day-lunar ${extra.isTerm ? 'is-term' : ''} ${
+          extra.isHoliday ? 'is-holiday' : ''
+        } ${extra.isMakeup ? 'is-makeup' : ''}">${esc(extra.text)}</span>` : ''}
       </div>
       ${plans.length ? `<div class="month-plans">${planChips.join('')}${planMore}</div>` : ''}
       <div class="month-events">
@@ -935,14 +1024,16 @@ function buildAllDayLayout(days) {
 
   for (const event of state.events) {
     if (!event.allDay || !isEventVisible(event)) continue;
-    const start = startOfDay(parseLocal(event.start));
-    const end = startOfDay(parseLocal(event.end));
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
-    if (end < rangeStart || start >= rangeEnd) continue;
-    const startIndex = clamp(daysBetween(rangeStart, start), 0, days.length - 1);
-    const endIndex = clamp(daysBetween(rangeStart, end), 0, days.length - 1);
-    if (endIndex < startIndex) continue;
-    items.push({ event, startIndex, endIndex });
+    for (const occurrence of Recurrence.expand(event, rangeStart, rangeEnd)) {
+      const start = startOfDay(parseLocal(occurrence.start));
+      const end = startOfDay(parseLocal(occurrence.end));
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+      if (end < rangeStart || start >= rangeEnd) continue;
+      const startIndex = clamp(daysBetween(rangeStart, start), 0, days.length - 1);
+      const endIndex = clamp(daysBetween(rangeStart, end), 0, days.length - 1);
+      if (endIndex < startIndex) continue;
+      items.push({ event: withOccurrence(event, occurrence), startIndex, endIndex });
+    }
   }
 
   items.sort(
@@ -971,10 +1062,13 @@ function buildAllDayLayout(days) {
       const width = (span / days.length) * 100;
       const start = parseLocal(item.event.start);
       const end = parseLocal(item.event.end);
+      const recurring = Recurrence.isRecurring(item.event);
       const tooltip = `${item.event.title} · ${formatMonthDay(start)}${
         sameDay(start, end) ? '' : ` – ${formatMonthDay(end)}`
-      } · 全天`;
-      return `<button class="allday-chip" data-event-id="${esc(item.event.id)}"
+      } · 全天${recurring ? ' · 重复日程' : ''}`;
+      return `<button class="allday-chip ${recurring ? 'is-recurring' : ''}" data-event-id="${esc(
+        item.event.id
+      )}" data-occurrence-date="${esc(item.event.occurrenceDate)}"
         style="left:calc(${left}% + 3px);width:calc(${width}% - 6px);top:${
         4 + item.lane * 21
       }px;--ev-color:${calendar.color};--ev-text:${textColorOn(calendar.color)}"
@@ -992,20 +1086,22 @@ function buildTimedBlocks(day) {
 
   for (const event of state.events) {
     if (event.allDay || !isEventVisible(event)) continue;
-    const start = parseLocal(event.start);
-    const end = parseLocal(event.end);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
-    if (start >= dayEnd || end <= dayStart) continue;
-    const displayStart = Math.max(start.getTime(), dayStart.getTime());
-    const displayEnd = Math.min(end.getTime(), dayEnd.getTime());
-    if (displayEnd <= displayStart) continue;
-    items.push({
-      event,
-      start: displayStart,
-      end: displayEnd,
-      startMinutes: (displayStart - dayStart.getTime()) / 60000,
-      endMinutes: (displayEnd - dayStart.getTime()) / 60000,
-    });
+    for (const occurrence of Recurrence.expand(event, dayStart, dayEnd)) {
+      const start = parseLocal(occurrence.start);
+      const end = parseLocal(occurrence.end);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+      if (start >= dayEnd || end <= dayStart) continue;
+      const displayStart = Math.max(start.getTime(), dayStart.getTime());
+      const displayEnd = Math.min(end.getTime(), dayEnd.getTime());
+      if (displayEnd <= displayStart) continue;
+      items.push({
+        event: withOccurrence(event, occurrence),
+        start: displayStart,
+        end: displayEnd,
+        startMinutes: (displayStart - dayStart.getTime()) / 60000,
+        endMinutes: (displayEnd - dayStart.getTime()) / 60000,
+      });
+    }
   }
 
   items.sort((a, b) => a.start - b.start || b.end - a.end);
@@ -1051,17 +1147,24 @@ function buildTimedBlocks(day) {
       const start = parseLocal(item.event.start);
       const end = parseLocal(item.event.end);
       const timeLabel = `${formatTime(start)} – ${formatTime(end)}`;
-      const tooltip = `${item.event.title} · ${timeLabel}${item.event.location ? ` · ${item.event.location}` : ''}`;
+      const recurring = Recurrence.isRecurring(item.event);
+      const tooltip = `${item.event.title} · ${timeLabel}${recurring ? ' · 重复日程' : ''}${
+        item.event.location ? ` · ${item.event.location}` : ''
+      }`;
       const showTime = height >= 36;
       const showLocation = height >= 54 && item.event.location;
-      return `<button type="button" class="timed-event ${compact ? 'compact' : ''}" data-event-id="${esc(
-        item.event.id
+      return `<button type="button" class="timed-event ${compact ? 'compact' : ''} ${
+        recurring ? 'is-recurring' : ''
+      }" data-event-id="${esc(item.event.id)}" data-occurrence-date="${esc(
+        item.event.occurrenceDate
       )}"
         style="left:calc(${left}% + 1px);width:calc(${width}% - 3px);top:${top}px;height:${height}px;--ev-color:${
         calendar.color
       };--ev-text:${textColorOn(calendar.color)}"
         title="${esc(tooltip)}">
-        <span class="te-title">${esc(item.event.title)}</span>
+        <span class="te-title">${recurring ? '<span class="te-repeat" aria-hidden="true">↻</span>' : ''}${esc(
+          item.event.title
+        )}</span>
         ${showTime ? `<span class="te-time">${timeLabel}</span>` : ''}
         ${showLocation ? `<span class="te-location">${esc(item.event.location)}</span>` : ''}
       </button>`;
@@ -1212,7 +1315,10 @@ mainView.addEventListener('click', (event) => {
 
   const eventNode = event.target.closest('[data-event-id]');
   if (eventNode) {
-    openEventDialog({ eventId: eventNode.dataset.eventId });
+    openEventDialog({
+      eventId: eventNode.dataset.eventId,
+      occurrenceDate: eventNode.dataset.occurrenceDate || undefined,
+    });
     return;
   }
 
@@ -1497,38 +1603,54 @@ function renderSearchResults() {
   }
 
   const needle = query.toLowerCase();
-  const now = Date.now();
-  const matches = state.events
-    .filter(isEventVisible)
-    .filter((event) => {
-      const haystack = `${event.title} ${event.location || ''} ${event.notes || ''}`.toLowerCase();
-      return haystack.includes(needle);
-    })
-    .map((event) => {
-      const start = parseLocal(event.start);
-      const end = parseLocal(event.end);
-      return { event, start, past: end.getTime() < now };
-    })
-    .sort((a, b) => {
-      if (a.past !== b.past) return a.past ? 1 : -1;
-      return a.past ? b.start - a.start : a.start - b.start;
-    })
-    .slice(0, 12);
+  const now = new Date();
+  const horizon = addDays(startOfDay(now), 366);
+  const matches = [];
+  for (const event of state.events) {
+    if (!isEventVisible(event)) continue;
+    const haystack = `${event.title} ${event.location || ''} ${event.notes || ''}`.toLowerCase();
+    if (!haystack.includes(needle)) continue;
+    const occurrence = Recurrence.isRecurring(event)
+      ? Recurrence.expand(event, now, horizon)[0] || null
+      : null;
+    const display = occurrence ? withOccurrence(event, occurrence) : event;
+    const start = parseLocal(display.start);
+    const end = parseLocal(display.end);
+    matches.push({
+      event,
+      occurrenceDate: occurrence?.occurrenceDate || null,
+      display,
+      start,
+      past: end.getTime() < now.getTime(),
+    });
+  }
+  matches.sort((a, b) => {
+    if (a.past !== b.past) return a.past ? 1 : -1;
+    return a.past ? b.start - a.start : a.start - b.start;
+  });
+  const limited = matches.slice(0, 12);
 
   searchResults.classList.remove('hidden');
-  if (matches.length === 0) {
+  if (limited.length === 0) {
     searchResults.innerHTML = `<div class="search-empty">没有找到“${esc(query)}”</div>`;
     return;
   }
 
-  searchResults.innerHTML = matches
-    .map(({ event }) => {
+  searchResults.innerHTML = limited
+    .map(({ event, display, occurrenceDate }) => {
       const calendar = calendarFor(event);
-      return `<button class="search-item" data-event-id="${esc(event.id)}">
+      const recurring = Recurrence.isRecurring(event);
+      return `<button class="search-item" data-event-id="${esc(event.id)}"${
+        occurrenceDate ? ` data-occurrence-date="${esc(occurrenceDate)}"` : ''
+      }>
         <span class="si-dot" style="--color:${calendar.color}"></span>
         <span class="si-text">
-          <span class="si-title">${esc(event.title)}</span>
-          <span class="si-meta">${esc(formatEventWhen(event))} · ${esc(calendar.name)}</span>
+          <span class="si-title">${recurring ? '<span class="si-repeat" aria-hidden="true">↻</span>' : ''}${esc(
+            event.title
+          )}</span>
+          <span class="si-meta">${esc(formatEventWhen(display))} · ${esc(calendar.name)}${
+            recurring ? ' · 重复' : ''
+          }</span>
         </span>
       </button>`;
     })
@@ -1537,20 +1659,20 @@ function renderSearchResults() {
 
 searchResults.addEventListener('click', (event) => {
   const item = event.target.closest('.search-item');
-  if (item) openSearchResult(item.dataset.eventId);
+  if (item) openSearchResult(item.dataset.eventId, item.dataset.occurrenceDate);
 });
 
-function openSearchResult(eventId) {
+function openSearchResult(eventId, occurrenceDate) {
   const event = state.events.find((item) => item.id === eventId);
   if (!event) return;
   captureTimeScroll();
-  cursor = startOfDay(parseLocal(event.start));
+  cursor = startOfDay(parseLocal(occurrenceDate || event.start));
   if (view === 'year') view = 'month';
   hideSearchResults();
   searchInput.value = '';
   searchQuery = '';
   render();
-  openEventDialog({ eventId });
+  openEventDialog({ eventId, occurrenceDate });
 }
 
 function formatEventWhen(event) {
@@ -1578,6 +1700,146 @@ function focusSearch() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 重复日程                                                            */
+/* ------------------------------------------------------------------ */
+
+const REPEAT_WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const REPEAT_WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function repeatSelectValue(recurrence) {
+  if (!recurrence) return 'none';
+  if (recurrence.freq === 'daily') return 'daily';
+  if (recurrence.freq === 'weekly') {
+    const days = recurrence.weekdays || [];
+    if (recurrence.interval === 1 && days.join(',') === '1,2,3,4,5') return 'weekdays';
+    if (recurrence.interval === 2) return 'biweekly';
+    return 'weekly';
+  }
+  if (recurrence.freq === 'monthly') {
+    return recurrence.interval === 3 ? 'quarterly' : 'monthly';
+  }
+  return 'yearly';
+}
+
+function renderRepeatWeekdayButtons() {
+  const container = $('#event-weekdays');
+  if (container.childElementCount > 0) return;
+  container.innerHTML = REPEAT_WEEKDAY_ORDER.map(
+    (day) =>
+      `<button type="button" class="repeat-weekday" data-weekday="${day}" aria-pressed="false" title="周${REPEAT_WEEKDAY_LABELS[day]}">${REPEAT_WEEKDAY_LABELS[day]}</button>`
+  ).join('');
+}
+
+function setRepeatWeekdays(days) {
+  const active = new Set(days);
+  $$('.repeat-weekday', $('#event-weekdays')).forEach((button) => {
+    const on = active.has(Number(button.dataset.weekday));
+    button.classList.toggle('active', on);
+    button.setAttribute('aria-pressed', String(on));
+  });
+}
+
+function getRepeatWeekdays() {
+  return $$('.repeat-weekday.active', $('#event-weekdays'))
+    .map((button) => Number(button.dataset.weekday))
+    .sort((a, b) => a - b);
+}
+
+function collectRecurrence(original = null) {
+  const value = $('#event-repeat').value;
+  if (value === 'none') return null;
+
+  const startDate = parseLocal($('#event-start-date').value || ymd(new Date()));
+  const base = {
+    weekdays: [],
+    until: $('#event-until').value || null,
+    exceptions:
+      original && Array.isArray(original.exceptions) ? original.exceptions.slice() : [],
+  };
+
+  let recurrence;
+  if (value === 'daily') {
+    recurrence = { ...base, freq: 'daily', interval: 1 };
+  } else if (value === 'weekdays') {
+    recurrence = { ...base, freq: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5] };
+  } else if (value === 'weekly' || value === 'biweekly') {
+    const days = getRepeatWeekdays();
+    recurrence = {
+      ...base,
+      freq: 'weekly',
+      interval: value === 'biweekly' ? 2 : 1,
+      weekdays: days.length ? days : [startDate.getDay()],
+    };
+  } else if (value === 'monthly') {
+    recurrence = { ...base, freq: 'monthly', interval: 1 };
+  } else if (value === 'quarterly') {
+    recurrence = { ...base, freq: 'monthly', interval: 3 };
+  } else {
+    recurrence = { ...base, freq: 'yearly', interval: 1 };
+  }
+
+  // 导入的数据可能有 1 以外的自定义间隔，未切换类型时保持原值
+  if (original && repeatSelectValue(original) === value) {
+    recurrence.interval = original.interval || recurrence.interval;
+    if (recurrence.freq === 'weekly' && original.weekdays?.length && !getRepeatWeekdays().length) {
+      recurrence.weekdays = original.weekdays.slice();
+    }
+  }
+
+  return Recurrence.normalize(recurrence);
+}
+
+function updateRepeatUI() {
+  const value = $('#event-repeat').value;
+  const recurring = value !== 'none';
+  $('#event-until-line').classList.toggle('hidden', !recurring);
+  $('#event-weekdays').classList.toggle('hidden', value !== 'weekly' && value !== 'biweekly');
+  const summary = $('#event-repeat-summary');
+  if (!recurring) {
+    summary.textContent = '';
+    return;
+  }
+  const recurrence = collectRecurrence(editingSeriesRecurrence);
+  summary.textContent = recurrence ? Recurrence.summary(recurrence) : '';
+}
+
+function setEditingScope(scope) {
+  editingScope = scope === 'series' ? 'series' : 'single';
+  $$('.scope-btn', $('#event-scope')).forEach((button) => {
+    const active = button.dataset.scope === editingScope;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-checked', String(active));
+  });
+  const deleteButton = $('#event-delete');
+  if (deleteButton) {
+    deleteButton.textContent =
+      editingScope === 'series' ? '删除所有重复日程' : '删除日程';
+  }
+  // 重复规则属于整个系列，单独编辑某一次时不允许改动
+  const lockRepeat = Boolean(editingSeriesRecurrence) && editingScope === 'single';
+  for (const selector of ['#event-repeat', '#event-until']) {
+    const input = $(selector);
+    if (input) input.disabled = lockRepeat;
+  }
+  $$('.repeat-weekday', $('#event-weekdays')).forEach((button) => {
+    button.disabled = lockRepeat;
+  });
+  $('#event-repeat-summary').classList.toggle('is-locked', lockRepeat);
+}
+
+function populateRepeatControls(recurrence, startDate) {
+  renderRepeatWeekdayButtons();
+  $('#event-repeat').value = repeatSelectValue(recurrence);
+  $('#event-until').value = recurrence?.until || '';
+  const weekdays =
+    recurrence && recurrence.freq === 'weekly' && recurrence.weekdays.length
+      ? recurrence.weekdays
+      : [startDate.getDay()];
+  setRepeatWeekdays(recurrence && recurrence.freq === 'weekly' ? weekdays : [startDate.getDay()]);
+  updateRepeatUI();
+}
+
+/* ------------------------------------------------------------------ */
 /* 事件编辑器                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -1594,10 +1856,28 @@ function openEventDialog(options = {}) {
   const existing = options.eventId
     ? state.events.find((event) => event.id === options.eventId)
     : null;
+  const series = existing && Recurrence.isRecurring(existing) ? existing : null;
   editingEventId = existing ? existing.id : null;
+  editingOccurrenceDate = null;
+  editingScope = 'single';
+  editingSeriesRecurrence = series ? Recurrence.normalize(series.recurrence) : null;
+
+  let occurrence = null;
+  if (series) {
+    const wanted = startOfDay(parseLocal(options.occurrenceDate || existing.start));
+    occurrence = Recurrence.expand(existing, wanted, addDays(wanted, 1))[0] || null;
+    if (occurrence) {
+      editingOccurrenceDate = occurrence.occurrenceDate;
+    } else {
+      const anchor = startOfDay(parseLocal(existing.start));
+      occurrence = Recurrence.expand(existing, anchor, addDays(anchor, 1))[0] || null;
+      editingOccurrenceDate = occurrence?.occurrenceDate || ymd(anchor);
+    }
+  }
 
   $('#event-dialog-title').textContent = existing ? '编辑日程' : '新建日程';
   $('#event-delete').classList.toggle('hidden', !existing);
+  $('#event-delete').textContent = '删除日程';
   $('#event-title').value = existing ? existing.title : '';
   $('#event-location').value = existing?.location || '';
   $('#event-notes').value = existing?.notes || '';
@@ -1619,8 +1899,8 @@ function openEventDialog(options = {}) {
   let allDay = Boolean(existing?.allDay);
 
   if (existing) {
-    start = parseLocal(existing.start);
-    end = parseLocal(existing.end);
+    start = parseLocal(occurrence ? occurrence.start : existing.start);
+    end = parseLocal(occurrence ? occurrence.end : existing.end);
   } else if (options.date) {
     const base = parseLocal(options.date);
     if (options.startMinutes != null) {
@@ -1650,6 +1930,10 @@ function openEventDialog(options = {}) {
   $('#event-end-time').value = timeValue(end);
   $('#event-allday').checked = allDay;
   updateAllDayState();
+
+  populateRepeatControls(editingSeriesRecurrence, start);
+  $('#event-scope').classList.toggle('hidden', !series);
+  setEditingScope('single');
 
   eventOverlay.classList.remove('hidden');
   requestAnimationFrame(() => {
@@ -1699,9 +1983,48 @@ $('#event-save').addEventListener('click', saveEvent);
 $('#event-cancel').addEventListener('click', closeEventDialog);
 $('#event-delete').addEventListener('click', deleteEditingEvent);
 
+$('#event-repeat').addEventListener('change', () => {
+  const value = $('#event-repeat').value;
+  if (value === 'weekly' || value === 'biweekly') {
+    if (getRepeatWeekdays().length === 0) {
+      const startDate = parseLocal($('#event-start-date').value || ymd(new Date()));
+      setRepeatWeekdays([startDate.getDay()]);
+    }
+  }
+  updateRepeatUI();
+});
+
+$('#event-weekdays').addEventListener('click', (event) => {
+  const button = event.target.closest('.repeat-weekday');
+  if (!button) return;
+  button.classList.toggle('active');
+  button.setAttribute('aria-pressed', String(button.classList.contains('active')));
+  if (getRepeatWeekdays().length === 0) {
+    button.classList.add('active');
+    button.setAttribute('aria-pressed', 'true');
+  }
+  updateRepeatUI();
+});
+
+$('#event-until').addEventListener('change', updateRepeatUI);
+$('#event-start-date').addEventListener('change', updateRepeatUI);
+$('#event-until-clear').addEventListener('click', () => {
+  $('#event-until').value = '';
+  updateRepeatUI();
+});
+
+$('#event-scope').addEventListener('click', (event) => {
+  const button = event.target.closest('.scope-btn');
+  if (!button) return;
+  setEditingScope(button.dataset.scope);
+});
+
 function closeEventDialog() {
   eventOverlay.classList.add('hidden');
   editingEventId = null;
+  editingOccurrenceDate = null;
+  editingScope = 'single';
+  editingSeriesRecurrence = null;
 }
 
 function saveEvent() {
@@ -1745,14 +2068,97 @@ function saveEvent() {
     notes: $('#event-notes').value.trim(),
   };
 
-  if (editingEventId) {
-    const event = state.events.find((item) => item.id === editingEventId);
-    if (event) Object.assign(event, payload);
-  } else {
-    state.events.push({ id: makeId('ev'), ...payload });
+  const repeatValue = $('#event-repeat').value;
+  const untilValue = $('#event-until').value;
+  if (repeatValue !== 'none' && untilValue && untilValue < startDate) {
+    showToast('重复结束日期不能早于开始日期');
+    return;
   }
 
+  const existing = editingEventId
+    ? state.events.find((item) => item.id === editingEventId)
+    : null;
+  const series = existing && Recurrence.isRecurring(existing) ? existing : null;
+  const recurrence = collectRecurrence(editingSeriesRecurrence);
+
   state.settings.defaultCalendarId = calendarId;
+
+  if (series && editingScope === 'single') {
+    const occurrenceDay = startOfDay(
+      parseLocal(editingOccurrenceDate || series.start)
+    );
+    const current = Recurrence.expand(
+      series,
+      occurrenceDay,
+      addDays(occurrenceDay, 1)
+    )[0];
+    const unchanged =
+      current &&
+      payload.title === series.title &&
+      payload.calendarId === series.calendarId &&
+      payload.start === current.start &&
+      payload.end === current.end &&
+      payload.allDay === Boolean(series.allDay) &&
+      payload.location === (series.location || '') &&
+      payload.notes === (series.notes || '');
+    if (unchanged) {
+      closeEventDialog();
+      return;
+    }
+
+    // 只改这一次：拆出独立日程，并把原实例标记为例外
+    state.events.push({ id: makeId('ev'), ...payload, recurrence: null });
+    const key = editingOccurrenceDate || ymd(parseLocal(payload.start));
+    const seriesRecurrence = Recurrence.normalize(series.recurrence);
+    if (!seriesRecurrence.exceptions.includes(key)) {
+      seriesRecurrence.exceptions.push(key);
+    }
+    series.recurrence = seriesRecurrence;
+    state.events.sort(compareEvents);
+    saveState();
+    closeEventDialog();
+    render();
+    showToast('已单独修改此日程');
+    return;
+  }
+
+  if (series && editingScope === 'series') {
+    // 改整个系列：沿系列锚点整体平移，保留各实例时间
+    const anchorDay = startOfDay(parseLocal(series.start));
+    const occurrenceDay = startOfDay(
+      parseLocal(editingOccurrenceDate || series.start)
+    );
+    const formStart = parseLocal(payload.start);
+    const formEnd = parseLocal(payload.end);
+    const shift = daysBetween(occurrenceDay, startOfDay(formStart));
+    const newAnchor = addDays(anchorDay, shift);
+    newAnchor.setHours(formStart.getHours(), formStart.getMinutes(), 0, 0);
+    const newEnd = new Date(newAnchor.getTime() + (formEnd - formStart));
+
+    Object.assign(series, {
+      calendarId,
+      title,
+      allDay,
+      location: payload.location,
+      notes: payload.notes,
+      start: formatLocal(newAnchor),
+      end: formatLocal(newEnd),
+      recurrence,
+    });
+    state.events.sort(compareEvents);
+    saveState();
+    closeEventDialog();
+    render();
+    showToast('已更新所有重复日程');
+    return;
+  }
+
+  if (existing) {
+    Object.assign(existing, payload, { recurrence });
+  } else {
+    state.events.push({ id: makeId('ev'), ...payload, recurrence });
+  }
+
   state.events.sort(compareEvents);
   saveState();
   closeEventDialog();
@@ -1761,6 +2167,41 @@ function saveEvent() {
 
 function deleteEditingEvent() {
   if (!editingEventId) return;
+  const existing = state.events.find((event) => event.id === editingEventId);
+  const series = existing && Recurrence.isRecurring(existing) ? existing : null;
+
+  if (series && editingScope === 'single') {
+    const key = editingOccurrenceDate || ymd(parseLocal(series.start));
+    const seriesRecurrence = Recurrence.normalize(series.recurrence);
+    if (!seriesRecurrence.exceptions.includes(key)) {
+      seriesRecurrence.exceptions.push(key);
+    }
+    series.recurrence = seriesRecurrence;
+    saveState();
+    closeEventDialog();
+    render();
+    showToast('已删除此日程');
+    return;
+  }
+
+  if (series) {
+    const seriesId = series.id;
+    const seriesTitle = series.title;
+    closeEventDialog();
+    openConfirm({
+      title: '删除所有重复日程？',
+      text: `将删除「${seriesTitle}」及其全部重复实例，此操作无法撤销。`,
+      okLabel: '全部删除',
+      onConfirm: () => {
+        state.events = state.events.filter((event) => event.id !== seriesId);
+        saveState();
+        render();
+        showToast('已删除重复日程');
+      },
+    });
+    return;
+  }
+
   state.events = state.events.filter((event) => event.id !== editingEventId);
   saveState();
   closeEventDialog();
@@ -2139,6 +2580,7 @@ function closeAllPopups() {
   closeCalendarDialog();
   closeConfirmDialog();
   closeWidgetGallery();
+  reminderOverlay.classList.add('hidden');
   if (window.SettingsUI?.isOpen()) SettingsUI.close();
   if (window.Plans?.isOpen()) Plans.closeEditor();
   hideContextMenu();
@@ -2408,12 +2850,14 @@ function handleNavigation(payload) {
   if (payload.eventId) {
     const event = state.events.find((item) => item.id === payload.eventId);
     if (event) {
+      const occurrenceDate =
+        payload.occurrenceDate || ymd(parseLocal(event.start));
       captureTimeScroll();
-      cursor = startOfDay(parseLocal(event.start));
+      cursor = startOfDay(parseLocal(occurrenceDate));
       if (view === 'year') view = 'month';
       saveState();
       render();
-      openEventDialog({ eventId: event.id });
+      openEventDialog({ eventId: event.id, occurrenceDate });
     }
     return;
   }
@@ -2436,6 +2880,91 @@ window.desktop.onNavigate(handleNavigation);
 window.desktop.onHidden(() => closeAllPopups());
 window.desktop.widgets.onChange(() => {
   if (!widgetOverlay.classList.contains('hidden')) refreshWidgetGallery();
+});
+
+/* ------------------------------------------------------------------ */
+/* 计划节点提醒                                                        */
+/* ------------------------------------------------------------------ */
+
+const REMINDER_STORAGE_PREFIX = 'morrow-plan-reminders:';
+let reminderRetry = null;
+
+function reminderStorageKey(dateKey = ymd(new Date())) {
+  return `${REMINDER_STORAGE_PREFIX}${dateKey}`;
+}
+
+function dismissedReminderIds(dateKey = ymd(new Date())) {
+  try {
+    const value = JSON.parse(localStorage.getItem(reminderStorageKey(dateKey)) || '[]');
+    return new Set(Array.isArray(value) ? value : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function dismissPlanReminders() {
+  const key = ymd(new Date());
+  const ids = Plans.remindersOn(key).map((item) => item.reminder.id);
+  try {
+    const merged = new Set([...dismissedReminderIds(key), ...ids]);
+    localStorage.setItem(reminderStorageKey(key), JSON.stringify([...merged]));
+  } catch {
+    // localStorage 不可用时只关闭本次
+  }
+  reminderOverlay.classList.add('hidden');
+}
+
+function showPlanReminders(force = false) {
+  if (!reminderOverlay || !reminderOverlay.classList.contains('hidden')) return;
+  const key = ymd(new Date());
+  const dismissed = dismissedReminderIds(key);
+  const items = Plans.remindersOn(key).filter(
+    (item) => !dismissed.has(item.reminder.id)
+  );
+  if (items.length === 0) return;
+  const busy = $$('.overlay').some(
+    (overlay) => overlay !== reminderOverlay && !overlay.classList.contains('hidden')
+  );
+  if (busy && !force) {
+    clearTimeout(reminderRetry);
+    reminderRetry = setTimeout(() => showPlanReminders(false), 2600);
+    return;
+  }
+
+  const poem = Plans.randomPoem();
+  const single = items.length === 1 ? items[0] : null;
+  $('#reminder-kicker').textContent = single
+    ? `计划 · ${single.plan.title}`
+    : 'TODAY · 今天的一个节点';
+  $('#reminder-heading').textContent = single
+    ? single.reminder.text
+    : `今天有 ${items.length} 个计划节点`;
+  $('#reminder-list').innerHTML = items
+    .map(({ plan, reminder }) => {
+      const color = Plans.colorFor(plan, state);
+      return `<div class="reminder-item" style="--plan-color:${color}">
+        <span class="reminder-dot"></span>
+        <span class="reminder-body">
+          <strong>${esc(plan.title)}</strong>
+          <span>${single ? '今天走到这个节点，按自己的节奏来。' : esc(reminder.text)}</span>
+        </span>
+        <span class="reminder-meta">${plan.end.slice(5).replace('-', '/')} 截止</span>
+      </div>`;
+    })
+    .join('');
+  $('#reminder-poem').textContent = `「${poem.line}」 · ${poem.from}`;
+  reminderOverlay.classList.remove('hidden');
+}
+
+$('#reminder-dismiss').addEventListener('click', dismissPlanReminders);
+reminderOverlay.addEventListener('mousedown', (event) => {
+  if (event.target === reminderOverlay) dismissPlanReminders();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !reminderOverlay.classList.contains('hidden')) {
+    event.preventDefault();
+    dismissPlanReminders();
+  }
 });
 
 window.__app = {
@@ -2499,6 +3028,8 @@ async function init() {
     const nowKey = ymd(new Date());
     if (nowKey !== currentDayKey) {
       currentDayKey = nowKey;
+      Plans.checkAutoMilestones(true);
+      showPlanReminders(true);
       render();
     } else {
       updateNowLine();
@@ -2509,8 +3040,10 @@ async function init() {
     if (!reminderShown) {
       reminderShown = true;
       Plans.dailyReminder();
+      Plans.checkAutoMilestones(true);
+      showPlanReminders(true);
     }
-  }, 1400);
+  }, 1700);
 }
 
 init();
@@ -2540,6 +3073,13 @@ window.__calendarTest = {
   },
   closeAll() {
     closeAllPopups();
+  },
+  showReminders() {
+    showPlanReminders(true);
+    return !reminderOverlay.classList.contains('hidden');
+  },
+  dismissReminders() {
+    dismissPlanReminders();
   },
   stats() {
     return {

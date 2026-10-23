@@ -1,0 +1,808 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>朝暮 · Morrow · 桌面日历</title>
+<style>
+  :root {
+    --text: #1d1d1f;
+    --text-2: #6e6e73;
+    --text-3: #929095;
+    --line: #e9e6ec;
+    --accent: #ff3b30;
+    --blue: #007aff;
+    --font: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont,
+      "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC",
+      "Hiragino Sans GB", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: #f2f0f5;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 32px 24px 72px;
+  }
+
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 48px 48px 40px;
+    border-radius: 28px;
+    background:
+      radial-gradient(90% 130% at 100% 0%, rgba(255, 214, 204, 0.85) 0%, rgba(255, 255, 255, 0) 55%),
+      radial-gradient(70% 100% at 0% 100%, rgba(214, 231, 255, 0.8) 0%, rgba(255, 255, 255, 0) 50%),
+      #ffffff;
+    box-shadow: 0 24px 70px rgba(32, 24, 46, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 11px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+    color: #6b6970;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .badge .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.14);
+  }
+
+  h1 {
+    margin: 22px 0 10px;
+    font-size: 58px;
+    font-weight: 720;
+    line-height: 1.05;
+    letter-spacing: -0.045em;
+  }
+
+  .hero-en {
+    display: block;
+    margin: -2px 0 14px;
+    color: #a09ea6;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.32em;
+  }
+
+  .byline {
+    margin: 0 0 14px;
+    color: #8b8991;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+
+  .subtitle {
+    max-width: 660px;
+    margin: 0;
+    color: var(--text-2);
+    font-size: 17px;
+    line-height: 1.65;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+  }
+
+  .chip {
+    padding: 5px 11px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.09);
+    color: #535259;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .hero-shot {
+    display: block;
+    width: 100%;
+    margin-top: 34px;
+    border-radius: 16px;
+    box-shadow: 0 22px 55px rgba(30, 22, 44, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  }
+
+  .card {
+    margin-top: 22px;
+    padding: 34px 38px;
+    border-radius: 22px;
+    background: #ffffff;
+    box-shadow: 0 10px 32px rgba(32, 24, 46, 0.055), 0 0 0 0.5px rgba(0, 0, 0, 0.045);
+  }
+
+  .kicker {
+    margin: 0 0 6px;
+    color: var(--accent);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  h2 {
+    margin: 0 0 14px;
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+
+  h3 {
+    margin: 26px 0 8px;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  p { margin: 0 0 12px; }
+  p:last-child { margin-bottom: 0; }
+
+  .lead { color: var(--text-2); }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+  }
+
+  .feature {
+    padding: 18px 19px;
+    border-radius: 14px;
+    background: #faf9fb;
+    box-shadow: inset 0 0 0 0.5px var(--line);
+  }
+
+  .feature h4 {
+    margin: 0 0 5px;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .feature p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .figure {
+    margin: 22px 0 0;
+  }
+
+  .figure img {
+    display: block;
+    width: 100%;
+    border-radius: 14px;
+    box-shadow: 0 14px 38px rgba(30, 22, 44, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  }
+
+  .figure figcaption {
+    margin-top: 9px;
+    color: var(--text-3);
+    font-size: 11.5px;
+    text-align: center;
+  }
+
+  pre {
+    margin: 12px 0 16px;
+    padding: 15px 17px;
+    overflow-x: auto;
+    border-radius: 11px;
+    background: #1d1d1f;
+    color: #f5f5f7;
+    font-family: "Cascadia Code", Consolas, "SFMono-Regular", monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+  }
+
+  code {
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: #f2f0f5;
+    color: #3c3b41;
+    font-family: "Cascadia Code", Consolas, "SFMono-Regular", monospace;
+    font-size: 0.9em;
+  }
+
+  pre code {
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  table {
+    width: 100%;
+    margin: 14px 0;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+
+  th {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    color: var(--text-3);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f1eff4;
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  kbd {
+    display: inline-block;
+    min-width: 21px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: #ffffff;
+    box-shadow: inset 0 0 0 1px #dcd9e1, 0 1px 1px rgba(0, 0, 0, 0.05);
+    color: #3b3a40;
+    font-family: inherit;
+    font-size: 11.5px;
+    line-height: 1.6;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .note {
+    margin: 16px 0;
+    padding: 12px 15px;
+    border-radius: 10px;
+    background: #fff9ec;
+    box-shadow: inset 3px 0 0 #ffb300;
+    color: #665333;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .note.blue {
+    background: #eff6ff;
+    box-shadow: inset 3px 0 0 #007aff;
+    color: #33506f;
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+    margin-top: 18px;
+  }
+
+  .split h3 { margin-top: 0; }
+
+  .path {
+    padding: 13px 16px;
+    border-radius: 10px;
+    background: #f7f5f9;
+    box-shadow: inset 0 0 0 0.5px var(--line);
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.9;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .toc a {
+    padding: 5px 10px;
+    border-radius: 7px;
+    background: #f7f5f9;
+    box-shadow: inset 0 0 0 0.5px var(--line);
+    color: #5f5d64;
+    font-size: 11.5px;
+    font-weight: 500;
+  }
+
+  .toc a:hover {
+    background: #ffffff;
+    text-decoration: none;
+    box-shadow: inset 0 0 0 0.5px #d8d5dd, 0 2px 5px rgba(0, 0, 0, 0.05);
+  }
+
+  ul { margin: 8px 0 12px; padding-left: 21px; }
+  li { margin: 4px 0; color: #45444a; }
+  li::marker { color: #b5b2ba; }
+
+  .footer {
+    padding: 28px 8px 0;
+    color: #a3a1a8;
+    font-size: 11.5px;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  @media (max-width: 760px) {
+    .wrap { padding: 16px 12px 48px; }
+    .hero { padding: 32px 24px 24px; border-radius: 22px; }
+    h1 { font-size: 42px; }
+    .hero-en { font-size: 10.5px; letter-spacing: 0.26em; }
+    .subtitle { font-size: 15px; }
+    .card { padding: 26px 22px; border-radius: 18px; }
+    .feature-grid, .split { grid-template-columns: 1fr; }
+    h2 { font-size: 23px; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    .wrap { max-width: none; padding: 0; }
+    .card, .hero { box-shadow: none; border: 1px solid #eee; break-inside: avoid; }
+    .toc { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="badge"><span class="dot"></span>MORROW · WINDOWS DESKTOP CALENDAR</span>
+    <h1>朝暮</h1>
+    <span class="hero-en">MORROW</span>
+    <p class="subtitle">朝朝暮暮，皆有安排。四种视图、灵活可调的重复日程、上下班倒计时与下班庆祝、法定节假日、跨周/跨月/跨年的长期计划、四种桌面小组件，以及一套完整的设置中心。所有日程只保存在本机。</p>
+    <p class="byline">yaolongda · 设计与实现</p>
+    <div class="chips">
+      <span class="chip">月 / 周 / 日 / 年</span>
+      <span class="chip">重复日程</span>
+      <span class="chip">下班庆祝</span>
+      <span class="chip">法定节假日</span>
+      <span class="chip">长期计划与提醒节点</span>
+      <span class="chip">四种桌面小组件</span>
+      <span class="chip">主题 · 毛玻璃 · 背景图片</span>
+    </div>
+    <img class="hero-shot" src="{{IMG_MONTH}}" alt="日历月视图截图" />
+    <nav class="toc" aria-label="目录">
+      <a href="#features">功能</a>
+      <a href="#rhythm">工作节奏</a>
+      <a href="#celebration">下班庆祝</a>
+      <a href="#plans">长期计划</a>
+      <a href="#start">快速开始</a>
+      <a href="#usage">使用说明</a>
+      <a href="#widgets">桌面小组件</a>
+      <a href="#settings">设置中心</a>
+      <a href="#shortcuts">快捷键</a>
+      <a href="#data">数据与隐私</a>
+      <a href="#structure">项目结构</a>
+      <a href="#tech">技术栈</a>
+      <a href="#notes">验证与边界</a>
+    </nav>
+  </header>
+
+  <section class="card" id="features">
+    <p class="kicker">OVERVIEW</p>
+    <h2>功能一览</h2>
+    <p class="lead">参考 macOS 自带日历的视觉与操作习惯：干净的白色画布、左侧迷你日历、彩色日程块，以及在桌面上常驻的小组件。</p>
+    <div class="feature-grid">
+      <div class="feature">
+        <h4>四种视图</h4>
+        <p>月、周、日、年视图切换。今天以红色高亮，跨月与多日日程都能自然呈现。</p>
+      </div>
+      <div class="feature">
+        <h4>快速创建</h4>
+        <p>周/日视图拖出时间区间即可新建；月视图双击日期快速创建；<kbd>Ctrl</kbd> + <kbd>N</kbd> 随时新建。</p>
+      </div>
+      <div class="feature">
+        <h4>重复日程</h4>
+        <p>每天、工作日、每周任选星期、每两周、每月、每季度、每年；可设结束日期，编辑时选择「仅此日程 / 所有日程」。</p>
+      </div>
+      <div class="feature">
+        <h4>上下班与下班庆祝</h4>
+        <p>上午/下午、全天或夜班；今天小组件倒计时，下班播放粒子动画与一句诗，节前自动增强。</p>
+      </div>
+      <div class="feature">
+        <h4>法定节假日</h4>
+        <p>内置 2024–2026 年放假与调休安排，自动休息/上班；特殊日期可设为加班不放假。</p>
+      </div>
+      <div class="feature">
+        <h4>多日历与配色</h4>
+        <p>工作、个人、家庭分别配色，可单独显示/隐藏；右键日历可重命名或删除。</p>
+      </div>
+      <div class="feature">
+        <h4>搜索与跳转</h4>
+        <p>按标题、地点、备注即时搜索。点击结果直接定位日期并打开日程。</p>
+      </div>
+      <div class="feature">
+        <h4>完整日程信息</h4>
+        <p>全天开关、开始/结束日期时间、地点、备注；周/日视图按真实时间轴排版。</p>
+      </div>
+      <div class="feature">
+        <h4>桌面小组件</h4>
+        <p>月历、今天、即将到来、月历与议程。拖动摆放、置顶或关闭，位置和状态会被记住。</p>
+      </div>
+      <div class="feature">
+        <h4>配置备份与迁移</h4>
+        <p><code>⋯</code> 菜单一键导出/导入。备份包含日历、全部日程、计划、设置与小组件布局，导入前确认覆盖。</p>
+      </div>
+      <div class="feature">
+        <h4>自定义工作节奏</h4>
+        <p>周起始日、双休 / 单休 / 大小周 / 上三休一 / 周六半天 / 月休五天 / 完全自定义，以及调休与补班。</p>
+      </div>
+      <div class="feature">
+        <h4>长期计划</h4>
+        <p>跨周、跨月、跨年计划，进度条与里程碑；达到 20/50/75/80/90/100% 时送上一句励志古诗。</p>
+      </div>
+      <div class="feature">
+        <h4>完整设置中心</h4>
+        <p>三套主题、字体、强调色、Mica / 亚克力、毛玻璃、背景图片，以及农历、节气、黄历、星座开关。</p>
+      </div>
+    </div>
+    <figure class="figure">
+      <img src="{{IMG_WEEK}}" alt="周日历视图截图" />
+      <figcaption>周视图：计划带、全天日程、时间轴、重叠日程与当前时间线</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="rhythm">
+    <p class="kicker">WORK RHYTHM</p>
+    <h2>工作节奏与休息日</h2>
+    <p class="lead">不是每个人都在周末休息。朝暮把「哪天上半天、哪周双休、这个月哪几天调休」变成可配置的规则，并同步到每一种视图与小组件。</p>
+    <div class="feature-grid">
+      <div class="feature">
+        <h4>周起始日</h4>
+        <p>周一、周日或周六开头，月历、年历与小组件列顺序一起改变。</p>
+      </div>
+      <div class="feature">
+        <h4>预设规则</h4>
+        <p>双休、单休、大小周、上三休一、周六上半天、周六半天大小周、月休五天（自设）。</p>
+      </div>
+      <div class="feature">
+        <h4>自定义</h4>
+        <p>逐天设置工作 / 半天 / 休息；再在特殊日期中补上调休、补班与例外。</p>
+      </div>
+      <div class="feature">
+        <h4>全局同步</h4>
+        <p>休息日与半天在月 / 周 / 日 / 年、迷你日历和所有桌面小组件中柔和高亮。</p>
+      </div>
+      <div class="feature">
+        <h4>上下班时间</h4>
+        <p>上午 + 下午、全天、夜班三种班次；今天小组件会显示距上班 / 午休 / 下班的时间。</p>
+      </div>
+      <div class="feature">
+        <h4>法定节假日</h4>
+        <p>2024–2026 年放假与调休自动同步；特殊日期优先级更高，可把节日设为加班。</p>
+      </div>
+    </div>
+    <figure class="figure">
+      <img src="{{IMG_SETTINGS_WORK}}" alt="工作时间与特殊日期设置" />
+      <figcaption>工作时间设置：预设、特殊日期、当月工作与休息天数统计</figcaption>
+    </figure>
+    <figure class="figure">
+      <img src="{{IMG_WORK_HOURS}}" alt="上下班时间与班次设置" />
+      <figcaption>上下班时间：上午 + 下午 / 全天 / 夜班，以及午间与下班庆祝开关</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="celebration">
+    <p class="kicker">OFF-WORK MOMENTS</p>
+    <h2>下班庆祝</h2>
+    <p class="lead">如果桌面上有「今天」小组件，下班这件事会被认真对待一下。</p>
+    <ul>
+      <li>午休时是一场轻量的庆祝：少量光点、一句短诗，提醒你先好好吃饭。</li>
+      <li>真正下班时，粒子更多、动画更完整，并送上一句下班诗。</li>
+      <li>如果第二天是周末或法定节假日，庆祝会自动升级为「假期前夜」，诗也会换掉。</li>
+      <li>夜班按跨午夜处理，早上结束时同样会庆祝。</li>
+      <li>所有庆祝只发生在小组件里，不弹系统通知，不抢焦点。</li>
+    </ul>
+    <figure class="figure">
+      <img src="{{IMG_CELEBRATION}}" alt="今天小组件的假期前夜庆祝" />
+      <figcaption>假期前夜：暖色渐变、漂浮粒子与一句诗</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="plans">
+    <p class="kicker">LONG-RUNNING PLANS</p>
+    <h2>长期计划与里程碑</h2>
+    <p class="lead">为研发计划、项目阶段或年度目标设置一个持续的日期范围。朝暮会自动识别短期、中期与长期，并在日历里留下不打扰的进度痕迹。</p>
+    <ul>
+      <li><strong>短期 · 跨周</strong>：3 周以内，适合迭代、冲刺与短期研发。</li>
+      <li><strong>中期 · 跨月</strong>：3 周至约 4 个月，适合项目阶段与季度目标。</li>
+      <li><strong>长期 · 跨年</strong>：超过 4 个月或跨年，适合年度计划。</li>
+      <li>月视图中的浅色进度带、周 / 日视图中的计划带，均可点击打开。</li>
+      <li><strong>按时间自动推进</strong>：新建计划默认随日期自动增长进度，也可以关掉开关手动拖动。</li>
+      <li><strong>自定义提醒节点</strong>：添加日期与名称，节点当天弹出一张温和的提醒卡与一句诗，不使用系统通知。</li>
+      <li>进度经过 <strong>20 / 50 / 75 / 80 / 90 / 100%</strong> 时随机出现一句励志古诗；临近截止时还有温和提醒。</li>
+      <li>侧边栏显示进行中的计划、进度与「今日节点」。</li>
+    </ul>
+    <figure class="figure">
+      <img src="{{IMG_PLAN}}" alt="长期计划编辑器" />
+      <figcaption>计划编辑器：类型识别、日期范围、进度里程碑与备注</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="start">
+    <p class="kicker">GET STARTED</p>
+    <h2>下载与起步</h2>
+    <h3>下载安装包</h3>
+    <p>前往本仓库的 <strong>Releases</strong> 页面，下载最新的 Windows 安装包：</p>
+    <pre><code>朝暮-Morrow-Setup-1.1.0.exe</code></pre>
+    <p>系统要求 Windows 10 / 11（x64）。默认按当前用户安装，无需管理员权限；会创建桌面与开始菜单快捷方式，可在「设置 → 应用」中卸载。安装包未做代码签名，首次运行若出现 SmartScreen，请选择「更多信息 → 仍要运行」。</p>
+    <div class="split">
+      <div>
+        <h3>从源码运行</h3>
+        <pre><code>npm install
+npm start</code></pre>
+        <p>项目已内置 Electron。若下载缓慢，可设置镜像：</p>
+        <pre><code>$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-builder-binaries/"
+npm install</code></pre>
+      </div>
+      <div>
+        <h3>构建</h3>
+        <pre><code>npm run dist
+# dist\朝暮-Morrow-Setup-1.1.0.exe
+
+npm run build:portable
+# release\朝暮-win32-x64\朝暮.exe</code></pre>
+        <p>安装包约 107 MB，因此作为 GitHub Release 附件发布，不提交到源码仓库。</p>
+      </div>
+    </div>
+    <div class="note blue">第一次启动会生成一组相对当天的示例日程，方便你立即体验各视图与小组件；可以自由修改或删除。</div>
+  </section>
+
+  <section class="card" id="usage">
+    <p class="kicker">GUIDE</p>
+    <h2>使用说明</h2>
+
+    <h3>视图与导航</h3>
+    <table>
+      <tr><th style="width:32%">操作</th><th>方式</th></tr>
+      <tr><td>切换视图</td><td>顶部「日 / 周 / 月 / 年」</td></tr>
+      <tr><td>回到今天</td><td>左上角「今天」或按 <kbd>T</kbd></td></tr>
+      <tr><td>前后翻页</td><td>左上角 <kbd>‹</kbd> <kbd>›</kbd> 或 <kbd>←</kbd> <kbd>→</kbd></td></tr>
+      <tr><td>打开某一天</td><td>点击月视图日期数字、周视图日期标题，或侧边栏迷你日历</td></tr>
+      <tr><td>显示/隐藏侧边栏</td><td>左上角第一个按钮</td></tr>
+    </table>
+
+    <h3>日程</h3>
+    <ul>
+      <li>点击 <strong>+</strong>、按 <kbd>Ctrl</kbd> + <kbd>N</kbd>，或双击月视图空白日期新建日程。</li>
+      <li>在周/日视图的空白时间列按住并向下拖动，框选时间段后新建。</li>
+      <li>点击任意日程打开编辑器；在编辑器中点击「删除日程」。</li>
+      <li>「全天」开关隐藏具体时间，只按日期显示。</li>
+      <li>编辑器中按 <kbd>Ctrl</kbd> + <kbd>Enter</kbd> 保存，<kbd>Esc</kbd> 取消。</li>
+    </ul>
+
+    <h3>重复日程</h3>
+    <ul>
+      <li>在编辑器「重复」中选择：每天、每个工作日、每周（任选星期几）、每两周、每月、每季度、每年。</li>
+      <li>「结束于」可设置重复截止日期；留空表示一直重复。</li>
+      <li>打开任意一次重复日程时，可选择 <strong>仅此日程</strong> 或 <strong>所有日程</strong>：前者只改当次，后者更新整个系列。</li>
+      <li>删除时同样按范围处理：只删当次会记为例外日期，删除所有日程会移除整个系列。</li>
+      <li>重复实例会展开到所有视图与桌面小组件，并以 ↻ 标记提示。</li>
+    </ul>
+
+    <h3>日历分组</h3>
+    <ul>
+      <li>「我的日历」右侧 <strong>+</strong> 新建日历，可选 7 种颜色。</li>
+      <li>点击日历名称可显示/隐藏该日历的所有日程。</li>
+      <li>在日历上<strong>右键</strong>可以重命名或删除；删除日历会连同日程一起删除，并会先确认。</li>
+    </ul>
+
+    <h3>搜索</h3>
+    <p>顶部搜索框输入关键字即可；<kbd>Ctrl</kbd> + <kbd>F</kbd> 或 <kbd>/</kbd> 聚焦搜索框。点击结果会跳转到对应日期并打开日程。</p>
+
+    <h3>配置导出与导入</h3>
+    <p>点击工具栏右侧的 <code>⋯</code>：</p>
+    <ul>
+      <li><strong>导出配置…</strong>：选择保存位置，生成一个 <code>.json</code> 备份，包含所有日历、日程、界面设置和桌面小组件布局（位置、置顶状态）。</li>
+      <li><strong>导入配置…</strong>：选择备份文件后，会先显示将被覆盖的日历、日程和小组件数量；确认后替换当前数据。</li>
+      <li>支持导入本应用导出的配置包，也兼容直接导入数据目录里的 <code>calendar-data.json</code>（这种文件不包含小组件布局，导入时会保留现有小组件）。</li>
+      <li>导入前建议先导出一份当前配置作为兜底。此操作无法撤销。</li>
+    </ul>
+    <figure class="figure">
+      <img src="{{IMG_MENU}}" alt="配置导出与导入菜单截图" />
+      <figcaption>工具栏 ⋯ 菜单：导出配置、导入配置、打开数据文件夹</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="widgets">
+    <p class="kicker">DESKTOP WIDGETS</p>
+    <h2>桌面小组件</h2>
+    <p class="lead">点击工具栏右侧的四宫格按钮打开「桌面小组件」，选择需要的尺寸添加到桌面。</p>
+    <table>
+      <tr><th style="width:26%">小组件</th><th style="width:24%">推荐起始尺寸</th><th>内容</th></tr>
+      <tr><td>月历</td><td>360 × 388</td><td>整月日期、日程圆点、月份切换</td></tr>
+      <tr><td>今天</td><td>360 × 388</td><td>大号日期、上下班倒计时与今天的日程</td></tr>
+      <tr><td>即将到来</td><td>676 × 344</td><td>接下来若干个日程</td></tr>
+      <tr><td>月历与议程</td><td>676 × 696</td><td>月历 + 选中日期的议程，宽屏自动并排</td></tr>
+    </table>
+    <ul>
+      <li>鼠标移到小组件上，右上角出现<strong>置顶</strong>与<strong>关闭</strong>按钮。</li>
+      <li>拖动卡片（标题或空白处）可移动，位置会自动保存。</li>
+      <li><strong>不再限制大 / 中 / 小预设</strong>：拖动右下角手柄或窗口边缘即可自由缩放，布局、字号与可见日程数量随尺寸自适应。</li>
+      <li>小组件跟随全局主题、强调色、字体、面板透明度、毛玻璃与背景图片。</li>
+      <li>可<strong>锁定位置与尺寸</strong>，固定后不会误移动；锁定状态会保留。</li>
+      <li>默认不强制置顶，留在普通窗口后面；点击图钉可固定在其它窗口上方。</li>
+      <li>休息日、半天与法定节假日会在小组件中柔和高亮；今日小组件显示农历、节气、上下班倒计时，并在下班时播放庆祝动画。</li>
+      <li>大号小组件单击日期切换下方议程；点击日期或日程会打开主日历对应位置。</li>
+    </ul>
+    <figure class="figure">
+      <img src="{{IMG_WIDGETS}}" alt="四种桌面小组件展示图" />
+      <figcaption>月历、今天、即将到来、月历与议程</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="settings">
+    <p class="kicker">SETTINGS</p>
+    <h2>设置中心</h2>
+    <p class="lead">点击工具栏齿轮或按 <kbd>Ctrl</kbd> + <kbd>,</kbd> 打开。日常功能、外观、显示与关于都在这里。</p>
+    <div class="feature-grid">
+      <div class="feature">
+        <h4>外观</h4>
+        <p>经典白 / 暖纸 / 晨雾三套主题；强调色、字体、Windows 11 Mica / 亚克力、面板不透明度与毛玻璃模糊。</p>
+      </div>
+      <div class="feature">
+        <h4>背景图片</h4>
+        <p>导入自己的图片作为桌面背景，可调透明度、模糊与暗化；自动压缩后保存在本机。</p>
+      </div>
+      <div class="feature">
+        <h4>工作时间</h4>
+        <p>休息规则、上下班班次与时间、法定节假日同步、特殊日期调休与加班。</p>
+      </div>
+      <div class="feature">
+        <h4>今日信息</h4>
+        <p>农历、二十四节气、黄历宜忌、星座运势开关；侧边栏显示今日摘要与上班倒计时。</p>
+      </div>
+      <div class="feature">
+        <h4>关于</h4>
+        <p>版本、简介、Slogan、项目主页与检查更新：<code>github.com/yaolongda/Morrow</code></p>
+      </div>
+    </div>
+    <figure class="figure">
+      <img src="{{IMG_APPEARANCE}}" alt="外观设置" />
+      <figcaption>外观：主题、字体、材质、毛玻璃与背景图片</figcaption>
+    </figure>
+    <figure class="figure">
+      <img src="{{IMG_ABOUT}}" alt="关于朝暮" />
+      <figcaption>关于页：版本、Slogan 与项目主页</figcaption>
+    </figure>
+  </section>
+
+  <section class="card" id="shortcuts">
+    <p class="kicker">SHORTCUTS</p>
+    <h2>快捷键</h2>
+    <table>
+      <tr><th style="width:36%">快捷键</th><th>功能</th></tr>
+      <tr><td><kbd>T</kbd></td><td>回到今天</td></tr>
+      <tr><td><kbd>D</kbd> / <kbd>W</kbd> / <kbd>M</kbd> / <kbd>Y</kbd></td><td>日 / 周 / 月 / 年视图</td></tr>
+      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>上一个 / 下一个时间范围</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>N</kbd></td><td>新建日程</td></tr>
+      <tr><td><kbd>P</kbd></td><td>新建计划</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd> 或 <kbd>/</kbd></td><td>搜索</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>,</kbd></td><td>打开设置</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>保存日程 / 计划（编辑器打开时）</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>关闭弹窗 / 搜索结果</td></tr>
+    </table>
+  </section>
+
+  <section class="card" id="data">
+    <p class="kicker">DATA &amp; PRIVACY</p>
+    <h2>数据与隐私</h2>
+    <p>所有数据只保存在本机，应用不访问网络、不上传任何内容。</p>
+    <div class="path">%APPDATA%\朝暮\
+├─ calendar-data.json    # 日历、日程、计划与设置
+├─ widgets.json          # 小组件位置、尺寸、置顶与锁定
+└─ window-state.json     # 主窗口大小与位置</div>
+    <p>备份时复制 <code>calendar-data.json</code> 即可；也可以使用 <code>⋯ → 导出配置…</code> 一键备份全部内容（含计划、设置与小组件布局）。删除该文件可恢复示例数据；卸载应用不会自动删除上述数据，如需彻底清除请手动删除 <code>%APPDATA%\朝暮</code>。从旧版「日历」升级时，会自动迁移原有日程与小组件数据。</p>
+  </section>
+
+  <section class="card" id="structure">
+    <p class="kicker">PROJECT</p>
+    <h2>项目结构</h2>
+    <pre><code>.
+├─ main.js                      # Electron 主进程：窗口、托盘、小组件、存储
+├─ preload.js                   # 安全的渲染进程桥接
+├─ seed.js                      # 首次启动示例数据
+├─ renderer/
+│  ├─ index.html                # 主窗口、设置中心、计划编辑
+│  ├─ styles.css / features.css # 主界面与功能样式
+│  ├─ app.js                    # 日历、计划、小组件、设置编排
+│  ├─ settings.js               # 设置中心
+│  ├─ plans.js                  # 长期计划与里程碑
+│  ├─ appearance.js             # 主题、字体、材质、背景
+│  ├─ lib/schedule.js           # 工作/休息日规则引擎
+│  ├─ lib/holidays.js           # 法定节假日与调休数据
+│  ├─ lib/workday.js            # 上下班时段与下班庆祝判定
+│  ├─ lib/almanac.js            # 农历、节气、黄历、星座
+│  ├─ widget.html / widget.css / widget.js
+│  └─ widget-extra.css
+├─ assets/                      # 应用与托盘图标
+├─ docs/                        # 截图、发布文案与说明
+├─ tools/
+│  ├─ e2e.js                    # 核心端到端测试
+│  ├─ features-test.js          # 新功能端到端测试
+│  ├─ widget-restart-test.js
+│  └─ build-portable.js         # 便携版构建
+├─ .github/workflows/release.yml
+├─ README.md / README.en.md / README.html
+├─ RELEASE_NOTES.md
+└─ LICENSE</code></pre>
+  </section>
+
+  <section class="card" id="tech">
+    <p class="kicker">TECH &amp; LICENSE</p>
+    <h2>技术栈与许可</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <h4>运行环境</h4>
+        <p>Electron 45。主界面与小组件使用原生 HTML / CSS / JavaScript，无前端框架，无运行时 NPM 依赖。</p>
+      </div>
+      <div class="feature">
+        <h4>数据与测试</h4>
+        <p>本地 JSON 原子写入；端到端测试通过 Chromium DevTools Protocol 驱动真实 Electron 窗口。</p>
+      </div>
+      <div class="feature">
+        <h4>打包</h4>
+        <p>electron-builder + NSIS。GitHub Actions 在打标签时自动构建并发布安装包。</p>
+      </div>
+      <div class="feature">
+        <h4>许可</h4>
+        <p>MIT License © 2026 yaolongda。参考 Apple Calendar 与 macOS Sonoma 小组件，但为独立实现。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="notes">
+    <p class="kicker">VERIFICATION &amp; LIMITS</p>
+    <h2>验证与已知边界</h2>
+    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程展开与编辑范围、计划自动进度与提醒节点、小组件自由缩放/主题/自适应/庆祝动画、配置导入导出与重启恢复等 <strong>59 项检查</strong>。</p>
+    <pre><code>node tools/e2e.js
+node tools/features-test.js
+node tools/widget-restart-test.js</code></pre>
+    <ul>
+      <li>农历与节气为本地计算；黄历宜忌为传统建除十二神的简化呈现，星座运势为本地生成的娱乐内容。</li>
+      <li>Mica / 亚克力需要 Windows 11；旧系统会回退到普通窗口。</li>
+      <li>法定节假日数据内置 2024–2026 年安排（chinese-days，MIT）；更晚年份回退到普通周末规则，可用特殊日期补充。</li>
+      <li>暂无云同步、团队协作、系统通知提醒与周数显示。</li>
+      <li>小组件是独立窗口，置顶时会覆盖其它应用；不置顶时随普通窗口层级变化。</li>
+      <li>安装包与便携版未签名，Windows SmartScreen 可能给出提示。</li>
+    </ul>
+  </section>
+
+  <footer class="footer">
+    朝暮 · Morrow · 由 yaolongda 设计实现<br />
+    参考设计：Apple Calendar / macOS Sonoma 桌面小组件。本项目为独立实现，与 Apple 无关。
+  </footer>
+</div>
+</body>
+</html>

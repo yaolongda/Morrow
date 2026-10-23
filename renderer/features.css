@@ -1718,3 +1718,535 @@ html body.material-on .settings-window {
   backdrop-filter: blur(calc(var(--glass-blur) + 8px));
 }
 
+
+/* 重复日程 */
+
+.edit-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 2px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.scope-label {
+  color: #7d7a84;
+  font-size: 11.5px;
+}
+
+.scope-options {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.055);
+}
+
+.scope-btn {
+  padding: 3px 9px;
+  border-radius: 5px;
+  color: #6f6c76;
+  font-size: 11.5px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.scope-btn.active {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+.repeat-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.repeat-line select {
+  max-width: 100%;
+  padding: 3px 2px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #3a393f;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.repeat-until {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #8d8b93;
+  font-size: 11.5px;
+}
+
+.repeat-until input {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: #3a393f;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.repeat-until input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.repeat-clear {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  color: #a3a0a9;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.repeat-clear:hover {
+  background: var(--hover);
+  color: #6f6c76;
+}
+
+.repeat-weekdays {
+  display: flex;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.repeat-weekday {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+  color: #7d7a84;
+  font-size: 11px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.repeat-weekday:hover {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+.repeat-weekday.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.repeat-summary {
+  margin: 6px 0 0;
+  color: #a3a0a9;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.repeat-summary:empty {
+  display: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* 重复标记 */
+.chip-repeat,
+.te-repeat,
+.si-repeat {
+  margin-right: 3px;
+  opacity: 0.62;
+  font-size: 0.92em;
+}
+
+.si-repeat {
+  margin-right: 4px;
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.repeat-line select:disabled,
+.repeat-until input:disabled,
+.repeat-weekday:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.repeat-summary.is-locked::after {
+  content: " · 修改重复规则请选择「所有日程」";
+  color: #b0adb6;
+}
+
+/* 工作时段、节假日与今日状态 */
+
+.set-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.set-row-label strong {
+  color: #39383e;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.set-row-label span {
+  color: #a09ea6;
+  font-size: 9.5px;
+}
+
+.work-time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.work-time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: #8d8b93;
+  font-size: 10.5px;
+}
+
+.work-time-field .set-time {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: none;
+  background: #fff;
+  color: #39383e;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.work-time-field .set-time:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.brief-work {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.07);
+}
+
+.brief-work-label {
+  color: #4d4c53;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.brief-work-detail {
+  color: #8d8b93;
+  font-size: 10.5px;
+}
+
+.brief-work.work .brief-work-label,
+.brief-work.before .brief-work-label {
+  color: #b06a12;
+}
+
+.brief-work.off .brief-work-label,
+.brief-work.rest .brief-work-label {
+  color: #2f7d4e;
+}
+
+.brief-holiday {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: color-mix(in srgb, var(--accent) 75%, #7d3a35);
+  font-size: 9.5px;
+}
+
+.day-lunar.is-holiday {
+  color: color-mix(in srgb, var(--accent) 78%, #9c3a35);
+  font-weight: 600;
+}
+
+.day-lunar.is-makeup {
+  color: #aa6a16;
+  font-weight: 600;
+}
+
+.override-day.is-holiday::after,
+.override-day.is-makeup::after {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  content: "";
+}
+
+.override-day.is-holiday::after {
+  background: var(--accent);
+}
+
+.override-day.is-makeup::after {
+  background: #b06a12;
+}
+
+/* 计划自动进度与提醒节点 */
+
+.plan-auto-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 7px;
+}
+
+.plan-auto-line .switch-line {
+  margin-bottom: 0;
+}
+
+.plan-auto-hint {
+  color: #a09ea6;
+  font-size: 10px;
+}
+
+.plan-reminder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #4d4c53;
+  font-size: 12px;
+}
+
+.plan-reminder-add {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, #5d3b3a);
+  font-size: 10.5px;
+  font-weight: 550;
+}
+
+.plan-reminder-add:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.plan-reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.plan-reminder-row {
+  display: grid;
+  grid-template-columns: 128px 1fr 22px;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-reminder-row .set-time {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  background: #fff;
+  color: #39383e;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.plan-reminder-row .set-time:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.plan-reminder-remove {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #b0adb6;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.plan-reminder-remove:hover {
+  background: var(--hover);
+  color: #6f6c76;
+}
+
+.plan-reminder-empty {
+  margin: 6px 0 2px;
+  color: #b0adb6;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.side-plan-node {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, #6b3a37);
+  font-size: 8.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+/* 计划节点提醒卡 */
+
+#reminder-overlay {
+  background: rgba(28, 22, 34, 0.32);
+  backdrop-filter: blur(6px);
+}
+
+.reminder-card {
+  position: relative;
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  padding: 34px 36px 28px;
+  overflow-y: auto;
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 58%),
+    linear-gradient(160deg, #fffdfb 0%, #faf6f1 58%, #f6f0ea 100%);
+  box-shadow: 0 40px 90px rgba(30, 18, 24, 0.28), inset 0 0 0 0.5px rgba(120, 80, 60, 0.12);
+  animation: reminder-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reminder-card::before {
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 214, 170, 0.55), transparent 70%);
+  content: "";
+  pointer-events: none;
+}
+
+@keyframes reminder-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.reminder-kicker {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: color-mix(in srgb, var(--accent) 72%, #7a4b3d);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+
+.reminder-heading {
+  margin: 0 0 18px;
+  color: #2b2529;
+  font-family: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.28;
+}
+
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reminder-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 0.5px rgba(120, 90, 80, 0.12);
+}
+
+.reminder-dot {
+  width: 4px;
+  height: 34px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--plan-color, var(--accent));
+}
+
+.reminder-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reminder-body strong {
+  color: #3a3034;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.reminder-body span {
+  color: #7c6f73;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reminder-meta {
+  flex: none;
+  color: #a2928d;
+  font-size: 10px;
+}
+
+.reminder-poem {
+  margin: 20px 0 22px;
+  color: #7a6a63;
+  font-family: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.8;
+  text-align: right;
+}
+
+.reminder-dismiss {
+  display: block;
+  width: 100%;
+  padding: 11px 16px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 88%, #7d3a35);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+.reminder-dismiss:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.plan-range:disabled {
+  opacity: 0.72;
+  cursor: default;
+}

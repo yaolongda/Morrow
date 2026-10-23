@@ -34,10 +34,55 @@
   };
   const daysBetween = (from, to) =>
     Math.round((startOfDay(to) - startOfDay(from)) / 86400000);
+  const addDays = (date, days) => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  };
 
   let deps = null;
   let editingId = null;
   let editorPrev = null;
+  let editorReminders = [];
+
+  function clampProgress(value) {
+    return Math.min(100, Math.max(0, Math.round(Number(value) || 0)));
+  }
+
+  function effectiveProgress(plan, now = new Date()) {
+    const manual = clampProgress(plan?.progress);
+    if (!plan?.autoProgress) return manual;
+    const start = parseYmd(plan.start);
+    const end = parseYmd(plan.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return manual;
+    const startTime = start.getTime();
+    const endTime = addDays(end, 1).getTime();
+    if (endTime <= startTime) return 100;
+    const elapsed = Math.min(Math.max(now.getTime() - startTime, 0), endTime - startTime);
+    return clampProgress((elapsed / (endTime - startTime)) * 100);
+  }
+
+  function reminderId() {
+    return `rem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  function planNodeToday(plan, now = new Date()) {
+    const key = ymd(startOfDay(now));
+    return (plan.reminders || []).find((reminder) => reminder.date === key) || null;
+  }
+
+  function remindersOn(key) {
+    if (!deps) return [];
+    const state = deps.getState();
+    const result = [];
+    for (const plan of state.plans) {
+      if (!visible(plan, state)) continue;
+      for (const reminder of plan.reminders || []) {
+        if (reminder.date === key) result.push({ plan, reminder });
+      }
+    }
+    return result.sort((a, b) => a.plan.title.localeCompare(b.plan.title, 'zh-CN'));
+  }
 
   function classify(plan) {
     const start = parseYmd(plan.start);
@@ -60,7 +105,7 @@
   function active(plans) {
     const today = ymd(startOfDay(new Date()));
     return plans
-      .filter((plan) => plan.end >= today && Number(plan.progress) < 100)
+      .filter((plan) => plan.end >= today && effectiveProgress(plan) < 100)
       .sort((a, b) => a.end.localeCompare(b.end));
   }
 
@@ -94,7 +139,7 @@
   function segmentHTML(plan, state, options = {}) {
     const color = colorFor(plan, state);
     const meta = classify(plan);
-    const progress = Math.min(100, Math.max(0, Number(plan.progress) || 0));
+    const progress = effectiveProgress(plan);
     const classes = [
       'plan-chip',
       `plan-${meta.key}`,
@@ -175,8 +220,12 @@
     notes.value = plan?.notes || '';
     progressLabel.textContent = `${progress.value}%`;
     editorPrev = Number(progress.value);
+    document.getElementById('plan-auto').checked = plan ? plan.autoProgress === true : true;
+    editorReminders = (plan?.reminders || []).map((reminder) => ({ ...reminder }));
+    renderEditorReminders();
     deleteBtn.classList.toggle('hidden', !plan);
     updateTypeLabel();
+    updateAutoProgressState();
 
     overlay.classList.remove('hidden');
     requestAnimationFrame(() => {
@@ -206,6 +255,83 @@
     label.dataset.kind = meta.key;
   }
 
+  function renderEditorReminders() {
+    const list = document.getElementById('plan-reminder-list');
+    if (!list) return;
+    if (editorReminders.length === 0) {
+      list.innerHTML = '<p class="plan-reminder-empty">还没有节点。可以添加「第一版交付」「中期复盘」这样的日期。</p>';
+      return;
+    }
+    list.innerHTML = editorReminders
+      .map(
+        (reminder, index) => `<div class="plan-reminder-row" data-reminder-index="${index}">
+          <input type="date" class="set-time" data-reminder-date value="${escapeAttr(
+            reminder.date || ''
+          )}" aria-label="提醒日期">
+          <input type="text" class="set-time" data-reminder-text maxlength="120" value="${escapeAttr(
+            reminder.text || ''
+          )}" placeholder="节点名称，如：第一阶段验收" aria-label="提醒内容">
+          <button type="button" class="plan-reminder-remove" data-reminder-remove title="移除节点" aria-label="移除节点">×</button>
+        </div>`
+      )
+      .join('');
+  }
+
+  function updateAutoProgressState() {
+    const auto = document.getElementById('plan-auto')?.checked === true;
+    const range = document.getElementById('plan-progress');
+    const label = document.getElementById('plan-progress-value');
+    const hint = document.getElementById('plan-auto-hint');
+    if (!range || !label) return;
+    const start = document.getElementById('plan-start').value;
+    const end = document.getElementById('plan-end').value;
+    const value = auto
+      ? effectiveProgress({ start, end, autoProgress: true, progress: Number(range.value) })
+      : Number(range.value);
+    if (auto) range.value = String(value);
+    range.disabled = auto;
+    range.style.setProperty('--value', `${value}%`);
+    label.textContent = `${value}%`;
+    if (hint) {
+      hint.textContent = auto
+        ? '进度会随日期自动增长，里程碑仍会送上诗句'
+        : '拖动滑块手动更新，或开启按时间自动推进';
+    }
+  }
+
+  function collectEditorReminders() {
+    return editorReminders
+      .map((reminder) => ({
+        id: reminder.id || reminderId(),
+        date: String(reminder.date || '').slice(0, 10),
+        text: String(reminder.text || '').trim().slice(0, 120),
+      }))
+      .filter((reminder) => /^\d{4}-\d{2}-\d{2}$/.test(reminder.date) && reminder.text)
+      .slice(0, 30);
+  }
+
+  function checkAutoMilestones(announce = true) {
+    if (!deps) return;
+    const state = deps.getState();
+    let changed = false;
+    for (const plan of state.plans) {
+      if (!plan.autoProgress) continue;
+      const progress = effectiveProgress(plan);
+      const seen = new Set(Array.isArray(plan.milestonesSeen) ? plan.milestonesSeen : []);
+      const crossed = MILESTONES.filter((value) => progress >= value && !seen.has(value));
+      if (crossed.length === 0) continue;
+      crossed.forEach((value) => seen.add(value));
+      plan.milestonesSeen = [...seen].sort((a, b) => a - b);
+      changed = true;
+      if (announce) {
+        const milestone = crossed[crossed.length - 1];
+        const poem = randomPoem();
+        deps.showToast(`「${poem.line}」 计划《${plan.title}》 按时间走到 ${milestone}%`, 5200);
+      }
+    }
+    if (changed) deps.saveState();
+  }
+
   function saveEditor() {
     const state = deps.getState();
     const title = document.getElementById('plan-title').value.trim();
@@ -227,11 +353,19 @@
 
     let plan;
     let beforeProgress = 0;
+    const autoProgress = document.getElementById('plan-auto').checked;
+    const reminders = collectEditorReminders();
     if (editingId) {
       plan = state.plans.find((item) => item.id === editingId);
       if (!plan) return closeEditor();
-      beforeProgress = Number(plan.progress) || 0;
-      Object.assign(plan, { title, start, end, calendarId, progress, notes });
+      beforeProgress = effectiveProgress(plan);
+      const wasAuto = plan.autoProgress === true;
+      Object.assign(plan, { title, start, end, calendarId, progress, notes, autoProgress, reminders });
+      if (autoProgress && !wasAuto) {
+        plan.milestonesSeen = MILESTONES.filter(
+          (value) => value <= effectiveProgress(plan)
+        );
+      }
     } else {
       plan = {
         id: `plan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -241,7 +375,15 @@
         calendarId,
         progress,
         notes,
+        autoProgress,
+        milestonesSeen: [],
+        reminders,
       };
+      if (autoProgress) {
+        plan.milestonesSeen = MILESTONES.filter(
+          (value) => value <= effectiveProgress(plan)
+        );
+      }
       state.plans.push(plan);
     }
 
@@ -250,7 +392,8 @@
     deps.render();
     closeEditor();
     deps.showToast(`计划《${plan.title}》已保存`);
-    if (progress > beforeProgress) milestoneToast(plan, beforeProgress, progress);
+    if (autoProgress) checkAutoMilestones(true);
+    else if (progress > beforeProgress) milestoneToast(plan, beforeProgress, progress);
   }
 
   function deletePlan() {
@@ -282,8 +425,41 @@
       event.target.style.setProperty('--value', `${event.target.value}%`);
     });
     for (const id of ['plan-start', 'plan-end']) {
-      document.getElementById(id).addEventListener('change', updateTypeLabel);
+      document.getElementById(id).addEventListener('change', () => {
+        updateTypeLabel();
+        updateAutoProgressState();
+      });
     }
+    document.getElementById('plan-auto').addEventListener('change', updateAutoProgressState);
+    document.getElementById('plan-add-reminder').addEventListener('click', () => {
+      editorReminders.push({
+        id: reminderId(),
+        date: document.getElementById('plan-start').value || ymd(startOfDay(new Date())),
+        text: '',
+      });
+      renderEditorReminders();
+      const rows = document.querySelectorAll('#plan-reminder-list .plan-reminder-row');
+      rows[rows.length - 1]?.querySelector('[data-reminder-text]')?.focus();
+    });
+    document.getElementById('plan-reminder-list').addEventListener('input', (event) => {
+      const row = event.target.closest('[data-reminder-index]');
+      if (!row) return;
+      const index = Number(row.dataset.reminderIndex);
+      if (!editorReminders[index]) return;
+      if (event.target.matches('[data-reminder-date]')) {
+        editorReminders[index].date = event.target.value;
+      } else if (event.target.matches('[data-reminder-text]')) {
+        editorReminders[index].text = event.target.value;
+      }
+    });
+    document.getElementById('plan-reminder-list').addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-reminder-remove]');
+      if (!remove) return;
+      const row = remove.closest('[data-reminder-index]');
+      if (!row) return;
+      editorReminders.splice(Number(row.dataset.reminderIndex), 1);
+      renderEditorReminders();
+    });
     document.getElementById('plan-overlay').addEventListener('mousedown', (event) => {
       if (event.target.id === 'plan-overlay') closeEditor();
     });
@@ -320,7 +496,9 @@
     const days = daysBetween(today, parseYmd(soon.end));
     const poem = randomPoem();
     deps.showToast(
-      `计划《${soon.title}》${days === 0 ? '今天截止' : `还有 ${days} 天`} · 当前 ${soon.progress}% · 「${poem.line}」`,
+      `计划《${soon.title}》${days === 0 ? '今天截止' : `还有 ${days} 天`} · 当前 ${effectiveProgress(
+        soon
+      )}% · 「${poem.line}」`,
       6200
     );
   }
@@ -340,5 +518,9 @@
     init,
     dailyReminder,
     randomPoem,
+    effectiveProgress,
+    planNodeToday,
+    remindersOn,
+    checkAutoMilestones,
   };
 })();

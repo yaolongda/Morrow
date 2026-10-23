@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const PACKAGE = require(path.join(ROOT, 'package.json'));
 const ELECTRON_DIST = path.join(ROOT, 'node_modules', 'electron', 'dist');
 const RELEASE = path.join(ROOT, 'release', '朝暮-win32-x64');
 
@@ -32,7 +33,7 @@ fs.writeFileSync(
     {
       name: 'morrow-calendar',
       productName: '朝暮',
-      version: '1.0.1',
+      version: PACKAGE.version,
       description: '朝暮 · Morrow：参考 macOS 日历设计的 Windows 桌面日历，带四种桌面小组件',
       main: 'main.js',
       license: 'MIT',

@@ -1,4 +1,4 @@
-/* 休息日 */
+﻿/* 休息日 */
 
 .w-day.rest .num {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
@@ -35,7 +35,7 @@
 
 .widget-menu {
   position: fixed;
-  z-index: 40;
+  z-index: 80;
   min-width: 174px;
   padding: 5px;
   border-radius: 10px;
@@ -191,4 +191,517 @@ body[data-size="lg"] .w-up-day {
 
 body[data-size="lg"] .w-title {
   font-size: 17px;
+}
+
+/* 重复日程标记 */
+.w-repeat {
+  margin-right: 3px;
+  opacity: 0.58;
+  font-size: 0.92em;
+}
+
+/* ------------------------------------------------------------------ */
+/* 自由缩放、主题、下班庆祝                                              */
+/* ------------------------------------------------------------------ */
+
+.widget-shell {
+  position: relative;
+}
+
+.widget-bg,
+.widget-bg-dim {
+  position: absolute;
+  inset: 20px;
+  border-radius: 22px;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+.widget-bg {
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+}
+
+.widget-bg-dim {
+  background: transparent;
+}
+
+body.has-bg .widget-card {
+  background: rgba(255, 255, 255, calc(var(--panel-alpha, 0.92) * 0.94));
+  backdrop-filter: blur(var(--glass-blur, 8px));
+}
+
+html[data-theme="paper"] body.has-bg .widget-card {
+  background: rgba(250, 245, 238, calc(var(--panel-alpha, 0.92) * 0.95));
+}
+
+html[data-theme="mist"] body.has-bg .widget-card {
+  background: rgba(243, 247, 250, calc(var(--panel-alpha, 0.92) * 0.94));
+}
+
+.resize-grip {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  z-index: 35;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  opacity: 0;
+  cursor: nwse-resize;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.resize-grip::before,
+.resize-grip::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+  border-right: 1.5px solid rgba(90, 80, 90, 0.34);
+  border-bottom: 1.5px solid rgba(90, 80, 90, 0.34);
+  border-radius: 0 0 3px 0;
+  content: "";
+}
+
+.resize-grip::after {
+  right: 8px;
+  bottom: 8px;
+  width: 5px;
+  height: 5px;
+  opacity: 0.6;
+}
+
+.widget-card:hover .resize-grip {
+  opacity: 1;
+}
+
+body[data-locked="1"] .resize-grip {
+  display: none;
+}
+
+body.is-resizing,
+body.is-resizing * {
+  cursor: nwse-resize !important;
+}
+
+/* 主题 */
+
+html[data-theme="paper"] body,
+html[data-theme="paper"] .widget-card {
+  color: #3b3029;
+}
+
+html[data-theme="paper"] .widget-card {
+  background:
+    radial-gradient(110% 90% at 100% 0%, rgba(246, 224, 198, 0.65) 0%, rgba(255, 250, 243, 0) 58%),
+    linear-gradient(165deg, #fffaf3 0%, #f7efe3 100%);
+}
+
+html[data-theme="paper"] .w-title,
+html[data-theme="paper"] .w-up-day,
+html[data-theme="paper"] .w-large-day-title,
+html[data-theme="paper"] .w-today-date {
+  color: #3b3029;
+}
+
+html[data-theme="paper"] .w-sub,
+html[data-theme="paper"] .w-up-month,
+html[data-theme="paper"] .w-large-day-sub,
+html[data-theme="paper"] .w-event-meta,
+html[data-theme="paper"] .w-up-meta,
+html[data-theme="paper"] .w-today-meta {
+  color: #9a8878;
+}
+
+html[data-theme="paper"] .w-up-row:hover,
+html[data-theme="paper"] .w-event:hover {
+  background: rgba(120, 90, 60, 0.07);
+}
+
+html[data-theme="mist"] body,
+html[data-theme="mist"] .widget-card {
+  color: #26323a;
+}
+
+html[data-theme="mist"] .widget-card {
+  background:
+    radial-gradient(110% 90% at 0% 0%, rgba(214, 232, 244, 0.72) 0%, rgba(250, 253, 255, 0) 58%),
+    linear-gradient(165deg, #fbfdff 0%, #eef4f8 100%);
+}
+
+html[data-theme="mist"] .w-title,
+html[data-theme="mist"] .w-up-day,
+html[data-theme="mist"] .w-large-day-title,
+html[data-theme="mist"] .w-today-date {
+  color: #26323a;
+}
+
+html[data-theme="mist"] .w-sub,
+html[data-theme="mist"] .w-up-month,
+html[data-theme="mist"] .w-large-day-sub,
+html[data-theme="mist"] .w-event-meta,
+html[data-theme="mist"] .w-up-meta,
+html[data-theme="mist"] .w-today-meta {
+  color: #7f929f;
+}
+
+html[data-theme="mist"] .w-up-row:hover,
+html[data-theme="mist"] .w-event:hover {
+  background: rgba(60, 100, 125, 0.08);
+}
+
+/* 上下班状态 */
+
+.w-workline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.038);
+  color: #6f6b73;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.w-work-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 82%, #c46b35);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.w-work-label {
+  flex: none;
+  color: #4d4a52;
+  font-weight: 600;
+}
+
+.w-work-detail {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: #8b8890;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.w-workline.rest .w-work-dot,
+.w-workline.off .w-work-dot {
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.14);
+}
+
+.w-workline.rest .w-work-label,
+.w-workline.off .w-work-label {
+  color: #337a4c;
+}
+
+body[data-size="xs"] .w-workline {
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 9px;
+}
+
+body[data-size="xs"] .w-work-detail {
+  width: 100%;
+  margin-left: 11px;
+}
+
+/* 今日计划节点 */
+
+.w-node {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: #6d5a55;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.w-node-kicker {
+  flex: none;
+  color: color-mix(in srgb, var(--accent) 78%, #7d3a35);
+  font-weight: 650;
+}
+
+.w-node-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 自适应字号 */
+
+.w-today-date {
+  font-size: clamp(48px, 17vmin, 92px);
+}
+
+.w-today-meta {
+  font-size: clamp(9.5px, 2.6vmin, 12px);
+}
+
+body[data-size="lg"] .w-title {
+  font-size: 17px;
+}
+
+body[data-size="lg"] .w-event-title {
+  font-size: 12.5px;
+}
+
+body[data-size="lg"] .w-event-meta {
+  font-size: 10.5px;
+}
+
+body[data-size="lg"] .w-day {
+  font-size: 10.5px;
+}
+
+body[data-size="lg"] .w-up-title {
+  font-size: 13.5px;
+}
+
+/* 宽屏：月历与议程并排 */
+
+body[data-type="monthAgenda"][data-layout="wide"] .w-large-content {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.12fr) minmax(220px, 0.88fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 16px;
+}
+
+body[data-type="monthAgenda"][data-layout="wide"] .w-head {
+  grid-column: 1 / -1;
+}
+
+body[data-type="monthAgenda"][data-layout="wide"] .w-large-month {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+}
+
+body[data-type="monthAgenda"][data-layout="wide"] .w-large-agenda {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-left: 16px;
+  border-top: none;
+  border-left: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+body[data-type="monthAgenda"][data-layout="wide"] .w-large-month .w-month-grid {
+  height: 100%;
+  min-height: 170px;
+}
+
+body[data-type="monthAgenda"][data-layout="tall"] .w-large-month .w-month-grid {
+  height: min(46vh, 300px);
+}
+
+/* 入场与悬停动画 */
+
+@keyframes w-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.w-event,
+.w-up-row {
+  animation: w-rise 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 26ms);
+}
+
+.w-event {
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+
+.w-event:hover {
+  transform: translateX(1px);
+}
+
+.w-day .num {
+  transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease;
+}
+
+.w-day:active .num {
+  transform: scale(0.92);
+}
+
+/* 下班庆祝 */
+
+.celebration {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 22px;
+  opacity: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.5s ease;
+}
+
+.celebration.hidden {
+  display: none;
+}
+
+.celebration.is-on {
+  opacity: 1;
+}
+
+.celebration.is-leaving {
+  opacity: 0;
+}
+
+.celebration[data-kind="lunch"] {
+  background:
+    radial-gradient(90% 70% at 50% 110%, rgba(255, 209, 150, 0.72) 0%, rgba(255, 245, 232, 0) 62%),
+    linear-gradient(165deg, rgba(255, 252, 246, 0.97) 0%, rgba(255, 240, 222, 0.97) 100%);
+}
+
+.celebration[data-kind="off"] {
+  background:
+    radial-gradient(90% 70% at 50% 112%, rgba(255, 163, 118, 0.78) 0%, rgba(255, 230, 210, 0) 64%),
+    linear-gradient(165deg, rgba(255, 250, 247, 0.97) 0%, rgba(255, 224, 206, 0.97) 100%);
+}
+
+.celebration[data-kind="preHoliday"] {
+  background:
+    radial-gradient(85% 75% at 50% 108%, rgba(255, 176, 82, 0.85) 0%, rgba(255, 225, 170, 0) 66%),
+    linear-gradient(160deg, rgba(255, 249, 240, 0.98) 0%, rgba(255, 214, 170, 0.98) 100%);
+}
+
+.celebration[data-kind="preHoliday"]::before {
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(circle at 50% 60%, rgba(255, 214, 120, 0.45), transparent 55%);
+  content: "";
+  animation: celebrate-glow 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes celebrate-glow {
+  from { opacity: 0.45; transform: scale(0.96); }
+  to { opacity: 0.85; transform: scale(1.04); }
+}
+
+.celebration-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.celebration-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 88%;
+  padding: 22px;
+  color: #3b2b25;
+  text-align: center;
+  animation: celebration-copy-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+}
+
+@keyframes celebration-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.celebration-kicker {
+  display: block;
+  margin-bottom: 10px;
+  color: color-mix(in srgb, var(--accent) 72%, #7d3a35);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+}
+
+.celebration-line {
+  display: block;
+  font-family: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
+  font-size: clamp(20px, 6.6vmin, 34px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
+  text-wrap: balance;
+}
+
+.celebration-from {
+  display: block;
+  margin-top: 10px;
+  color: #9a7f70;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.celebration-hint {
+  display: block;
+  margin-top: 18px;
+  color: #8d7368;
+  font-size: 10.5px;
+}
+
+body[data-size="xs"] .celebration-copy {
+  padding: 12px;
+}
+
+body[data-size="xs"] .celebration-line {
+  font-size: 17px;
+}
+
+body[data-size="xs"] .celebration-hint {
+  margin-top: 10px;
+  font-size: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celebration,
+  .celebration-copy,
+  .celebration[data-kind="preHoliday"]::before,
+  .w-event,
+  .w-up-row {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.w-greeting {
+  display: block;
+  margin-top: 5px;
+  color: color-mix(in srgb, var(--accent) 55%, #7b7780);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+body[data-size="xs"] .w-greeting {
+  display: none;
 }

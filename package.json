@@ -1,7 +1,7 @@
 {
   "name": "morrow-calendar",
   "productName": "朝暮",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "朝暮 · Morrow：参考 macOS 日历设计的 Windows 桌面日历，带四种可拖拽桌面小组件",
   "main": "main.js",
   "private": true,
@@ -22,6 +22,7 @@
     "test:features": "node tools/features-test.js",
     "test:widgets": "node tools/widget-restart-test.js",
     "build:portable": "node tools/build-portable.js",
+    "build:readme": "node tools/build-readme.js",
     "dist": "electron-builder --win nsis --x64"
   },
   "keywords": [

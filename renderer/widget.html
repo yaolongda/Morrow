@@ -13,6 +13,8 @@
 </head>
 <body>
   <div class="widget-shell">
+    <div class="widget-bg" id="widget-bg" aria-hidden="true"></div>
+    <div class="widget-bg-dim" id="widget-bg-dim" aria-hidden="true"></div>
     <div class="widget-card" id="widget-card">
       <div class="widget-controls">
         <button class="widget-control" id="pin-btn" title="固定在其它窗口上方" aria-label="固定小组件">
@@ -26,11 +28,17 @@
         </button>
       </div>
       <div class="widget-content" id="widget-content"></div>
+      <div class="celebration hidden" id="celebration" aria-live="polite">
+        <canvas class="celebration-canvas" id="celebration-canvas"></canvas>
+        <div class="celebration-copy">
+          <span class="celebration-kicker" id="celebration-kicker"></span>
+          <strong class="celebration-line" id="celebration-line"></strong>
+          <span class="celebration-from" id="celebration-from"></span>
+          <span class="celebration-hint" id="celebration-hint">辛苦了</span>
+        </div>
+      </div>
       <div class="widget-menu hidden" id="widget-menu" role="menu">
-        <button data-action="size-small" role="menuitem">小尺寸</button>
-        <button data-action="size-medium" role="menuitem">中尺寸</button>
-        <button data-action="size-large" role="menuitem">大尺寸</button>
-        <button data-action="size-default" role="menuitem">恢复默认尺寸</button>
+        <button data-action="size-default" role="menuitem">回到推荐大小</button>
         <div class="widget-menu-sep"></div>
         <button data-action="lock" role="menuitem" id="lock-menu-btn">锁定位置与尺寸</button>
         <button data-action="pin" role="menuitem" id="pin-menu-btn">置顶</button>
@@ -38,10 +46,14 @@
         <button data-action="close" role="menuitem" class="danger">关闭小组件</button>
       </div>
       <div class="resize-hint" aria-hidden="true"></div>
+      <div class="resize-grip" id="resize-grip" title="拖动调整大小" aria-hidden="true"></div>
     </div>
   </div>
   <script src="lib/schedule.js"></script>
+  <script src="lib/holidays.js"></script>
+  <script src="lib/workday.js"></script>
   <script src="lib/almanac.js"></script>
+  <script src="lib/recurrence.js"></script>
   <script src="appearance.js"></script>
   <script src="widget.js"></script>
 </body>

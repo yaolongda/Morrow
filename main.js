@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const {
   app,
@@ -158,8 +158,8 @@ function widgetPosition(type) {
     .map((item) => ({
       x: item.x,
       y: item.y,
-      width: Math.max(300, Math.round(item.width || WIDGET_SIZES[item.type].width)),
-      height: Math.max(300, Math.round(item.height || WIDGET_SIZES[item.type].height)),
+      width: Math.max(280, Math.round(item.width || WIDGET_SIZES[item.type].width)),
+      height: Math.max(280, Math.round(item.height || WIDGET_SIZES[item.type].height)),
     }));
 
   const overlaps = (x, y) =>
@@ -201,8 +201,8 @@ function createWidgetWindow(config, options = {}) {
   const size = WIDGET_SIZES[config.type];
   if (!size) return null;
 
-  const width = Math.max(300, Math.min(1600, Math.round(config.width || size.width)));
-  const height = Math.max(300, Math.min(1400, Math.round(config.height || size.height)));
+  const width = Math.max(280, Math.min(1600, Math.round(config.width || size.width)));
+  const height = Math.max(280, Math.min(1400, Math.round(config.height || size.height)));
   config.width = width;
   config.height = height;
 
@@ -217,8 +217,8 @@ function createWidgetWindow(config, options = {}) {
     height,
     x: positioned.x,
     y: positioned.y,
-    minWidth: 300,
-    minHeight: 300,
+    minWidth: 280,
+    minHeight: 280,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -346,10 +346,10 @@ function importWidgets(configs) {
       x: Number.isFinite(item.x) ? Math.round(item.x) : undefined,
       y: Number.isFinite(item.y) ? Math.round(item.y) : undefined,
       width: Number.isFinite(item.width)
-        ? Math.max(300, Math.min(1600, Math.round(item.width)))
+        ? Math.max(280, Math.min(1600, Math.round(item.width)))
         : WIDGET_SIZES[item.type].width,
       height: Number.isFinite(item.height)
-        ? Math.max(300, Math.min(1400, Math.round(item.height)))
+        ? Math.max(280, Math.min(1400, Math.round(item.height)))
         : WIDGET_SIZES[item.type].height,
       pin: Boolean(item.pin),
       locked: Boolean(item.locked),
@@ -716,8 +716,8 @@ function registerIpc() {
     if (!win) return null;
     const config = widgetConfigs.find((item) => item.id === win.__widgetId);
     if (!config) return null;
-    const width = Math.max(300, Math.min(1600, Math.round(Number(size?.width) || 0)));
-    const height = Math.max(300, Math.min(1400, Math.round(Number(size?.height) || 0)));
+    const width = Math.max(280, Math.min(1600, Math.round(Number(size?.width) || 0)));
+    const height = Math.max(280, Math.min(1400, Math.round(Number(size?.height) || 0)));
     const bounds = win.getBounds();
     const area = screen.getDisplayMatching(bounds).workArea;
     const x = Math.min(

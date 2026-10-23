@@ -56,6 +56,7 @@
     if (!state.settings.display) {
       state.settings.display = { lunar: true, solarTerms: true, almanac: false, zodiac: false };
     }
+    if (!state.settings.workHours) state.settings.workHours = Workday.defaults();
     return state;
   }
 
@@ -175,6 +176,74 @@
       </div>`;
   }
 
+  function workHoursHTML(state) {
+    const workHours = Workday.normalize(state.settings.workHours);
+    const schedule = Schedule.normalize(state.settings.schedule);
+    const field = (path, value, label) =>
+      `<label class="work-time-field"><span>${label}</span><input type="time" class="set-time" data-worktime="${path}" value="${value}"></label>`;
+
+    let fields = '';
+    if (workHours.mode === 'split') {
+      fields = `<div class="work-time-grid">
+        ${field('morning.start', workHours.morning.start, '上午上班')}
+        ${field('morning.end', workHours.morning.end, '午休开始')}
+        ${field('afternoon.start', workHours.afternoon.start, '下午上班')}
+        ${field('afternoon.end', workHours.afternoon.end, '下班')}
+      </div>
+      <p class="set-hint">午休时会有一个轻量庆祝，真正下班时的庆祝会更完整。</p>`;
+    } else if (workHours.mode === 'full') {
+      fields = `<div class="work-time-grid">
+        ${field('full.start', workHours.full.start, '上班')}
+        ${field('full.end', workHours.full.end, '下班')}
+      </div>
+      <p class="set-hint">中午不单独下班，只在一天结束时庆祝。</p>`;
+    } else {
+      fields = `<div class="work-time-grid">
+        ${field('night.start', workHours.night.start, '夜班开始')}
+        ${field('night.end', workHours.night.end, '夜班结束')}
+      </div>
+      <p class="set-hint">结束时间早于开始时间时，按跨午夜处理。</p>`;
+    }
+
+    return `
+      <div class="set-group">
+        <div class="set-group-title">上下班时间</div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>班次</strong><span>决定倒计时和下班的庆祝时刻</span></div>
+          <div class="set-control">${segmented(
+            [
+              { value: 'split', label: '上午 + 下午' },
+              { value: 'full', label: '全天' },
+              { value: 'night', label: '夜班' },
+            ],
+            workHours.mode,
+            'data-workmode'
+          )}</div>
+        </div>
+        ${fields}
+        <div class="set-row">
+          <div class="set-row-label"><strong>启用上下班提醒</strong><span>今天小组件会显示上班倒计时</span></div>
+          <div class="set-control">${toggle('workHours.enabled', workHours.enabled)}</div>
+        </div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>午间小庆祝</strong><span>午休时轻轻提醒一句</span></div>
+          <div class="set-control">${toggle('workHours.lunch', workHours.lunch)}</div>
+        </div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>下班庆祝</strong><span>下班时播放动画，并送一句诗</span></div>
+          <div class="set-control">${toggle('workHours.off', workHours.off)}</div>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-group-title">法定节假日</div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>同步中国法定节假日</strong><span>放假自动休息，调休补班日自动上班</span></div>
+          <div class="set-control">${toggle('schedule.followHolidays', schedule.followHolidays)}</div>
+        </div>
+        <p class="set-hint">内置 2024–2026 年放假与调休安排。下方「特殊日期」优先级更高：把某天点成「补班」，就是加班不放假。</p>
+      </div>`;
+  }
+
   function scheduleHTML(state) {
     const schedule = Schedule.normalize(state.settings.schedule);
     const weekStart = [0, 1, 6].includes(Number(state.settings.weekStart))
@@ -258,6 +327,7 @@
         }
       </div>
       ${customGrid}
+      ${workHoursHTML(state)}
       <div class="set-group">
         <div class="set-group-title">特殊日期</div>
         <div class="override-head">
@@ -290,12 +360,22 @@
         const outside = date.getMonth() !== overrideMonth.getMonth();
         const type = Schedule.dayType(schedule, date, weekStart);
         const overridden = Boolean(schedule.overrides[key]);
+        const holiday = Holidays.info(key);
+        const typeText = type === 'rest' ? '休息' : type === 'half' ? '半天' : '工作';
+        const holidayClass =
+          holiday?.type === 'holiday'
+            ? 'is-holiday'
+            : holiday?.type === 'workday'
+              ? 'is-makeup'
+              : '';
         return `<button type="button" class="override-day ${type} ${
           outside ? 'outside' : ''
-        } ${overridden ? 'overridden' : ''} ${key === today ? 'today' : ''}"
+        } ${overridden ? 'overridden' : ''} ${holidayClass} ${
+          key === today ? 'today' : ''
+        }"
           data-override-date="${key}" title="${date.getMonth() + 1}月${date.getDate()}日 · ${
-            type === 'rest' ? '休息' : type === 'half' ? '半天' : '工作'
-          }">
+            holiday ? `${holiday.name} · ` : ''
+          }${typeText}">
           <span>${date.getDate()}</span>
           ${overridden ? '<i></i>' : ''}
         </button>`;
@@ -511,7 +591,7 @@
         <p class="about-slogan">朝朝暮暮，皆有安排。</p>
         <p class="about-desc">一款参考 macOS 日历设计的 Windows 桌面日历。四种视图、长期计划、四种可拖拽小组件，所有数据只保存在本机。</p>
         <div class="about-meta">
-          <span>版本 ${info ? info.version : '1.0.1'}</span>
+          <span>版本 ${info ? info.version : '1.1.0'}</span>
           <span>Windows 10 / 11 · x64</span>
           <span>MIT License</span>
         </div>
@@ -582,6 +662,17 @@
       if (week) {
         const state = ensureDefaults(deps.getState());
         state.settings.weekStart = Number(week.dataset.weekstart);
+        deps.onChange({ rerender: true });
+        render();
+        return;
+      }
+      const workMode = event.target.closest('[data-workmode]');
+      if (workMode) {
+        const state = ensureDefaults(deps.getState());
+        state.settings.workHours = Workday.normalize({
+          ...state.settings.workHours,
+          mode: workMode.dataset.workmode,
+        });
         deps.onChange({ rerender: true });
         render();
         return;
@@ -745,6 +836,17 @@
 
     // 字体等 select 需要单独处理
     content.addEventListener('change', (event) => {
+      const workTime = event.target.closest('[data-worktime]');
+      if (workTime) {
+        const [group, key] = workTime.dataset.worktime.split('.');
+        const state = ensureDefaults(deps.getState());
+        const workHours = Workday.normalize(state.settings.workHours);
+        if (workHours[group]) workHours[group][key] = workTime.value;
+        state.settings.workHours = Workday.normalize(workHours);
+        deps.onChange({ soft: true });
+        render();
+        return;
+      }
       const select = event.target.closest('.set-select[data-path]');
       if (!select) return;
       const state = ensureDefaults(deps.getState());

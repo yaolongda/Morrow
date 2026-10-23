@@ -144,6 +144,9 @@ async function main() {
       brief: document.querySelector('#settings-content')?.innerText.includes('特殊日期')
     })`);
     check('特殊日期可以覆盖休息/补班', overrideState.dayType.includes('work') || overrideState.dayType.includes('overridden'), JSON.stringify(overrideState));
+    await main.evaluate("document.querySelector('[data-workmode]')?.scrollIntoView({ block: 'center' })");
+    await sleep(300);
+    await main.shot('feature-work-hours.png');
 
     // 4. 外观：主题与强调色
     await main.evaluate("document.querySelector('.settings-nav [data-section=appearance]').click()");
@@ -173,11 +176,18 @@ async function main() {
       end.value = ${JSON.stringify(planEnd)};
       start.dispatchEvent(new Event('change', { bubbles: true }));
       end.dispatchEvent(new Event('change', { bubbles: true }));
+      const auto = document.querySelector('#plan-auto');
+      const defaultAuto = auto.checked;
+      if (auto.checked) {
+        auto.checked = false;
+        auto.dispatchEvent(new Event('change', { bubbles: true }));
+      }
       document.querySelector('#plan-progress').value = '30';
       document.querySelector('#plan-progress').dispatchEvent(new Event('input', { bubbles: true }));
-      return document.querySelector('#plan-type').textContent;
+      return { type: document.querySelector('#plan-type').textContent, defaultAuto };
     })()`);
-    check('计划类型自动识别', planType.includes('中期计划'), planType);
+    check('计划类型自动识别', planType.type.includes('中期计划'), planType.type);
+    check('新建计划默认按时间推进', planType.defaultAuto === true, JSON.stringify(planType));
     await main.shot('feature-plan-editor.png');
     await main.evaluate("document.querySelector('#plan-save').click()");
     await sleep(600);
@@ -209,7 +219,306 @@ async function main() {
     check('周视图显示计划带', planWeek === 'week' && bandExists);
     await main.shot('feature-plan-week.png');
 
-    // 7. 小组件：尺寸、锁定、休息日同步
+    // 7. 重复日程：展开、编辑范围、删除单个实例
+    await main.evaluate("window.__calendarTest.setView('month')");
+    await sleep(400);
+    const recurringSeed = await main.evaluate(`(() => {
+      const pad = (n) => String(n).padStart(2, '0');
+      const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      const from = new Date();
+      from.setDate(from.getDate() - 40);
+      const event = {
+        id: 'test-recurring',
+        calendarId: 'work',
+        title: '重复验证 · 每日',
+        start: ymd(from) + 'T07:00',
+        end: ymd(from) + 'T08:00',
+        allDay: false,
+        location: '',
+        notes: '',
+        recurrence: { freq: 'daily', interval: 1, weekdays: [], until: null, exceptions: [] },
+      };
+      window.__app.getState().events.push(event);
+      window.__app.render();
+      return { chips: document.querySelectorAll('.event-chip.is-recurring').length };
+    })()`);
+    check('重复日程在月视图逐日展开', recurringSeed.chips >= 28, JSON.stringify(recurringSeed));
+    await main.shot('feature-repeat-month.png');
+
+    await main.evaluate("document.querySelector('.event-chip.is-recurring').click()");
+    await sleep(350);
+    await main.shot('feature-repeat-dialog.png');
+    const recurringDialog = await main.evaluate(`({
+      open: !document.querySelector('#event-overlay').classList.contains('hidden'),
+      scopeVisible: !document.querySelector('#event-scope').classList.contains('hidden'),
+      repeat: document.querySelector('#event-repeat').value,
+      scope: document.querySelector('.scope-btn.active')?.dataset.scope,
+      repeatLocked: document.querySelector('#event-repeat').disabled,
+      deleteLabel: document.querySelector('#event-delete').textContent
+    })`);
+    check(
+      '打开重复实例显示编辑范围',
+      recurringDialog.open &&
+        recurringDialog.scopeVisible &&
+        recurringDialog.repeat === 'daily' &&
+        recurringDialog.scope === 'single' &&
+        recurringDialog.repeatLocked,
+      JSON.stringify(recurringDialog)
+    );
+
+    await main.evaluate(`(() => {
+      document.querySelector('#event-title').value = '重复验证 · 已更新';
+      document.querySelector('.scope-btn[data-scope="series"]').click();
+      document.querySelector('#event-save').click();
+    })()`);
+    await sleep(500);
+    const seriesUpdated = await main.evaluate(`(() => {
+      const event = window.__app.getState().events.find((item) => item.id === 'test-recurring');
+      const chips = Array.from(document.querySelectorAll('.event-chip.is-recurring'));
+      return {
+        title: event?.title,
+        freq: event?.recurrence?.freq,
+        chips: chips.length,
+        renamed:
+          chips.some((node) => node.textContent.includes('已更新')) &&
+          chips
+            .filter((node) => node.textContent.includes('重复验证'))
+            .every((node) => node.textContent.includes('已更新')),
+      };
+    })()`);
+    check(
+      '所有日程范围更新整个系列',
+      seriesUpdated.title === '重复验证 · 已更新' &&
+        seriesUpdated.freq === 'daily' &&
+        seriesUpdated.chips > 0 &&
+        seriesUpdated.renamed,
+      JSON.stringify(seriesUpdated)
+    );
+
+    const deletedOccurrence = await main.evaluate(`(() => {
+      const chip = document.querySelector('.event-chip.is-recurring');
+      const date = chip.dataset.occurrenceDate;
+      chip.click();
+      return date;
+    })()`);
+    await sleep(300);
+    await main.evaluate("document.querySelector('#event-delete').click()");
+    await sleep(500);
+    const afterSingleDelete = await main.evaluate(`(() => {
+      const event = window.__app.getState().events.find((item) => item.id === 'test-recurring');
+      const stillShown = Array.from(document.querySelectorAll('.event-chip')).some(
+        (node) => node.dataset.occurrenceDate === ${JSON.stringify(deletedOccurrence)} &&
+          node.textContent.includes('已更新')
+      );
+      return {
+        exceptions: event?.recurrence?.exceptions || [],
+        stillShown,
+      };
+    })()`);
+    check(
+      '删除单个重复实例只影响当天',
+      afterSingleDelete.exceptions.includes(deletedOccurrence) && !afterSingleDelete.stillShown,
+      JSON.stringify(afterSingleDelete)
+    );
+
+    await main.evaluate("document.querySelector('.event-chip.is-recurring').click()");
+    await sleep(300);
+    const weeklyUI = await main.evaluate(`(() => {
+      document.querySelector('.scope-btn[data-scope="series"]').click();
+      const select = document.querySelector('#event-repeat');
+      select.value = 'weekly';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return {
+        visible: !document.querySelector('#event-weekdays').classList.contains('hidden'),
+        active: Array.from(document.querySelectorAll('.repeat-weekday.active')).map(
+          (node) => node.dataset.weekday
+        ),
+        summary: document.querySelector('#event-repeat-summary').textContent,
+      };
+    })()`);
+    check(
+      '每周重复可选择星期几',
+      weeklyUI.visible && weeklyUI.active.length > 0 && weeklyUI.summary.includes('周'),
+      JSON.stringify(weeklyUI)
+    );
+    await main.shot('feature-repeat-weekly.png');
+    await main.evaluate("document.querySelector('#event-cancel').click()");
+    await sleep(300);
+
+    // 8. 法定节假日、上下班时间与下班庆祝判定
+    const workdayChecks = await main.evaluate(`(() => {
+      const schedule = {
+        preset: 'double', restWeekdays: [0, 6], halfWeekdays: [], alternate: null,
+        cycle: null, overrides: {}, followHolidays: true
+      };
+      const workHours = {
+        enabled: true, mode: 'split',
+        morning: { start: '09:00', end: '12:00' },
+        afternoon: { start: '13:00', end: '18:00' },
+        full: { start: '09:00', end: '18:00' },
+        night: { start: '21:00', end: '06:00' },
+        celebrate: true, lunch: true, off: true
+      };
+      const options = { schedule, weekStart: 1, workHours };
+      const wednesday = new Date(2026, 9, 21);
+      const friday = new Date(2026, 9, 23);
+      const wedEvents = Workday.celebrationsForDate(wednesday, options);
+      const friEvents = Workday.celebrationsForDate(friday, options);
+      const status = Workday.statusFor(new Date(2026, 9, 21, 10, 0), options);
+      const nightOptions = { ...options, workHours: { ...workHours, mode: 'night' } };
+      const nightStatus = Workday.statusFor(new Date(2026, 9, 21, 22, 0), nightOptions);
+      const nightEvents = Workday.celebrationsForDate(new Date(2026, 9, 22), nightOptions);
+      return {
+        wedKinds: wedEvents.map((item) => item.kind),
+        wedIntensity: wedEvents.map((item) => item.intensity),
+        friKinds: friEvents.map((item) => item.kind),
+        status,
+        nightState: nightStatus.state,
+        nightKinds: nightEvents.map((item) => item.kind),
+        oct1: Holidays.info('2026-10-01'),
+        oct10: Holidays.info('2026-10-10'),
+        holidayType: Schedule.dayType(schedule, new Date(2026, 9, 1), 1),
+        makeupType: Schedule.dayType(schedule, new Date(2026, 9, 10), 1),
+        overtimeType: Schedule.dayType(
+          { ...schedule, overrides: { '2026-10-01': 'work' } },
+          new Date(2026, 9, 1),
+          1
+        ),
+        noHolidayType: Schedule.dayType({ ...schedule, followHolidays: false }, new Date(2026, 9, 1), 1),
+        upcomingLunch: Workday.upcomingCelebration(new Date(2026, 9, 21, 12, 1), options)?.kind,
+        upcomingOff: Workday.upcomingCelebration(new Date(2026, 9, 21, 18, 2), options)?.kind
+      };
+    })()`);
+    check(
+      '法定节假日与调休补班自动生效',
+      workdayChecks.oct1?.type === 'holiday' &&
+        workdayChecks.oct10?.type === 'workday' &&
+        workdayChecks.holidayType === 'rest' &&
+        workdayChecks.makeupType === 'work' &&
+        workdayChecks.overtimeType === 'work' &&
+        workdayChecks.noHolidayType === 'work',
+      JSON.stringify({
+        oct1: workdayChecks.oct1,
+        oct10: workdayChecks.oct10,
+        types: [
+          workdayChecks.holidayType,
+          workdayChecks.makeupType,
+          workdayChecks.overtimeType,
+          workdayChecks.noHolidayType,
+        ]
+      })
+    );
+    check(
+      '午休/下班庆祝强度与夜班判定正确',
+      workdayChecks.wedKinds.join(',') === 'lunch,off' &&
+        workdayChecks.wedIntensity.join(',') === '1,2' &&
+        workdayChecks.friKinds.includes('preHoliday') &&
+        workdayChecks.status.state === 'work' &&
+        workdayChecks.status.detail.includes('午休') &&
+        workdayChecks.nightState === 'work' &&
+        workdayChecks.nightKinds.join(',') === 'off' &&
+        workdayChecks.upcomingLunch === 'lunch' &&
+        workdayChecks.upcomingOff === 'off',
+      JSON.stringify(workdayChecks)
+    );
+
+    const holidayCells = await main.evaluate(
+      "document.querySelectorAll('.month-day.is-holiday').length"
+    );
+    check('月视图标出法定节假日', holidayCells > 0, `holiday cells=${holidayCells}`);
+
+    await main.evaluate("window.__calendarTest.openSettings('schedule')");
+    await sleep(300);
+    await main.evaluate("document.querySelector('[data-workmode=\"night\"]').click()");
+    await sleep(300);
+    const workModeState = await main.evaluate(`({
+      mode: window.__app.getState().settings.workHours.mode,
+      nightInputs: document.querySelectorAll('[data-worktime^="night"]').length,
+      holidayToggle: Boolean(document.querySelector('input[data-path="schedule.followHolidays"]')?.checked)
+    })`);
+    check(
+      '设置中心可切换上下班班次',
+      workModeState.mode === 'night' &&
+        workModeState.nightInputs === 2 &&
+        workModeState.holidayToggle,
+      JSON.stringify(workModeState)
+    );
+    await main.evaluate("document.querySelector('[data-workmode=\"split\"]').click()");
+    await sleep(250);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    await sleep(250);
+
+    // 9. 计划自动进度与提醒节点
+    const autoPlan = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const pad = (n) => String(n).padStart(2, '0');
+      const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      const now = new Date();
+      const start = new Date(now); start.setDate(start.getDate() - 10);
+      const end = new Date(now); end.setDate(end.getDate() + 10);
+      const plan = {
+        id: 'test-auto-plan', calendarId: 'work', title: '自动推进验证',
+        start: ymd(start), end: ymd(end), progress: 0, autoProgress: true,
+        milestonesSeen: [], reminders: [{ id: 'test-rem', date: ymd(now), text: '今天要做完的一件事' }],
+        notes: ''
+      };
+      state.plans.push(plan);
+      window.__app.render();
+      return {
+        progress: window.Plans.effectiveProgress(plan),
+        node: Boolean(window.Plans.planNodeToday(plan)),
+        reminders: window.Plans.remindersOn(ymd(now)).length
+      };
+    })()`);
+    check(
+      '计划进度按时间自动推进',
+      autoPlan.progress >= 40 &&
+        autoPlan.progress <= 60 &&
+        autoPlan.node &&
+        autoPlan.reminders === 1,
+      JSON.stringify(autoPlan)
+    );
+
+    await main.evaluate("window.__calendarTest.openPlanEditor('test-auto-plan')");
+    await sleep(350);
+    const autoEditor = await main.evaluate(`({
+      auto: document.querySelector('#plan-auto').checked,
+      disabled: document.querySelector('#plan-progress').disabled,
+      value: document.querySelector('#plan-progress-value').textContent,
+      reminders: document.querySelectorAll('.plan-reminder-row').length
+    })`);
+    check(
+      '计划编辑器支持自动进度与节点',
+      autoEditor.auto &&
+        autoEditor.disabled &&
+        parseInt(autoEditor.value, 10) >= 40 &&
+        autoEditor.reminders === 1,
+      JSON.stringify(autoEditor)
+    );
+    await main.shot('feature-plan-auto.png');
+    await main.evaluate("document.querySelector('#plan-cancel').click()");
+    await sleep(250);
+
+    const reminderVisible = await main.evaluate("window.__calendarTest.showReminders()");
+    await sleep(350);
+    const reminderState = await main.evaluate(`({
+      heading: document.querySelector('#reminder-heading').textContent,
+      list: document.querySelector('#reminder-list').innerText,
+      poem: document.querySelector('#reminder-poem').textContent
+    })`);
+    check(
+      '计划节点当天显示温和提醒卡',
+      reminderVisible &&
+        reminderState.heading.includes('今天要做完的一件事') &&
+        reminderState.list.includes('自动推进验证') &&
+        reminderState.poem.includes('「'),
+      JSON.stringify(reminderState)
+    );
+    await main.shot('feature-reminder.png');
+    await main.evaluate("window.__calendarTest.dismissReminders()");
+    await sleep(250);
+
+    // 10. 小组件：尺寸、锁定、休息日同步
     await main.evaluate("window.__calendarTest.setView('month'); window.__calendarTest.openWidgetGallery();");
     await sleep(700);
     await main.evaluate("document.querySelector('.wg-toggle[data-type=\"month\"]').click()");
@@ -238,7 +547,7 @@ async function main() {
     check('小组件右键菜单打开', menuVisible);
     await widget.shot('feature-widget-menu.png');
 
-    await widget.evaluate("document.querySelector('[data-action=\"size-medium\"]').click()");
+    await widget.evaluate("window.desktop.widget.setSize(560, 460)");
     await sleep(800);
     const resized = await widget.evaluate('window.__widgetTest.stats()');
     check('小组件可以调整尺寸', resized.width > widgetInitial.width, `${widgetInitial.width} -> ${resized.width}`);
@@ -263,7 +572,77 @@ async function main() {
     await widget.evaluate("window.desktop.widget.close()");
     await sleep(400);
 
-    // 8. 显示农历、宜忌、星座
+    await main.evaluate("document.querySelector('.wg-toggle[data-type=\"today\"]').click()");
+    await sleep(1000);
+    const todayTarget = await waitFor(async () => {
+      const list = await targets();
+      return list.find((item) => item.type === 'page' && item.url.includes('type=today'));
+    });
+    const todayWidget = await new CDP(todayTarget.webSocketDebuggerUrl).connect();
+    await waitFor(() => todayWidget.evaluate('Boolean(window.__widgetTest)'));
+    await sleep(500);
+    const todayWidgetState = await todayWidget.evaluate(`(() => {
+      const rows = Array.from(document.querySelectorAll('[data-event-id]'));
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const todayKey = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+      return {
+        rows: rows.length,
+        todayOccurrence: rows.some((row) => row.dataset.occurrenceDate === todayKey),
+        recurringVisible: rows.some((row) => row.title.includes('重复验证')),
+      };
+    })()`);
+    check(
+      '今天小组件展开重复日程',
+      todayWidgetState.rows > 0 &&
+        todayWidgetState.todayOccurrence &&
+        todayWidgetState.recurringVisible,
+      JSON.stringify(todayWidgetState)
+    );
+
+    const todayBase = await todayWidget.evaluate('window.__widgetTest.stats()');
+    await todayWidget.shot('feature-widget-today.png');
+    check(
+      '小组件可自由缩放并跟随主题',
+      todayBase.sizePresets === 0 &&
+        todayBase.resizeGrip &&
+        todayBase.theme === 'paper' &&
+        todayBase.workline.includes('休息'),
+      JSON.stringify({
+        sizePresets: todayBase.sizePresets,
+        resizeGrip: todayBase.resizeGrip,
+        theme: todayBase.theme,
+        workline: todayBase.workline
+      })
+    );
+
+    await todayWidget.evaluate("window.desktop.widget.setSize(760, 420)");
+    await sleep(800);
+    const todayWide = await todayWidget.evaluate('window.__widgetTest.stats()');
+    check(
+      '小组件布局随尺寸自适应',
+      todayWide.width >= 720 && todayWide.size === 'lg' && todayWide.layout === 'wide',
+      JSON.stringify({ width: todayWide.width, size: todayWide.size, layout: todayWide.layout })
+    );
+
+    const celebrationState = await todayWidget.evaluate("window.__widgetTest.celebrate('preHoliday')");
+    await sleep(500);
+    check(
+      '今天小组件播放下班庆祝',
+      celebrationState.visible &&
+        celebrationState.kind === 'preHoliday' &&
+        celebrationState.line.length > 0,
+      JSON.stringify(celebrationState)
+    );
+    await todayWidget.shot('feature-widget-celebration.png');
+    await todayWidget.evaluate("window.__widgetTest.dismissCelebration()");
+    await sleep(600);
+
+    await todayWidget.evaluate("window.desktop.widget.close()");
+    todayWidget.close();
+    await sleep(400);
+
+    // 11. 显示农历、宜忌、星座
     await main.evaluate("document.querySelector('#widget-close').click(); window.__calendarTest.openSettings('display')");
     await sleep(300);
     await main.evaluate(`(() => {

@@ -92,12 +92,46 @@
   function applyWidget(settings) {
     const appearance = settings?.appearance || {};
     const root = document.documentElement;
+    const theme = THEMES[appearance.theme] ? appearance.theme : 'classic';
     const accent = /^#[0-9a-f]{6}$/i.test(appearance.accent || '')
       ? appearance.accent
       : '#FF3B30';
     const font = FONTS[appearance.font] ? appearance.font : 'system';
+    root.dataset.theme = theme;
     root.style.setProperty('--accent', accent);
     root.style.setProperty('--font', FONTS[font].stack);
+    root.style.setProperty(
+      '--panel-alpha',
+      String(Math.min(1, Math.max(0.45, Number(appearance.panelOpacity) || 0.92)))
+    );
+    root.style.setProperty(
+      '--glass-blur',
+      `${Math.min(36, Math.max(0, Number(appearance.glass) || 0))}px`
+    );
+
+    const background = appearance.background || null;
+    const hasBackground = Boolean(background?.dataUrl);
+    document.body.classList.toggle('has-bg', hasBackground);
+    const layer = document.getElementById('widget-bg');
+    const dim = document.getElementById('widget-bg-dim');
+    if (layer) {
+      layer.style.backgroundImage = hasBackground ? `url("${background.dataUrl}")` : 'none';
+      layer.style.opacity = hasBackground
+        ? String(Math.min(1, Math.max(0.05, Number(background.opacity) || 0.45)))
+        : '0';
+      layer.style.filter = hasBackground
+        ? `blur(${Math.min(30, Math.max(0, Number(background.blur) || 0))}px)`
+        : 'none';
+    }
+    if (dim) {
+      dim.style.background = hasBackground
+        ? `rgba(0, 0, 0, ${Math.min(0.7, Math.max(0, Number(background.dim) || 0))})`
+        : 'transparent';
+    }
+    const material = ['none', 'mica', 'acrylic'].includes(appearance.material)
+      ? appearance.material
+      : 'none';
+    document.body.classList.toggle('material-on', material !== 'none');
   }
 
   window.Appearance = { FONTS, THEMES, ACCENTS, apply, applyWidget };
