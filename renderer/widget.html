@@ -38,6 +38,39 @@
         </div>
       </div>
       <div class="widget-menu hidden" id="widget-menu" role="menu">
+        <button data-action="new-event" role="menuitem">新建日程…</button>
+        <button data-action="open-view" data-view="month" role="menuitem">打开月视图</button>
+        <button data-action="open-view" data-view="day" role="menuitem">打开今日视图</button>
+        <div class="widget-menu-sep"></div>
+        <div class="widget-menu-fields">
+          <label>主题
+            <select id="menu-theme" aria-label="小组件主题">
+              <option value="inherit">跟随全局</option>
+              <option value="classic">经典白</option>
+              <option value="paper">暖纸</option>
+              <option value="mist">晨雾</option>
+            </select>
+          </label>
+          <label>不透明度
+            <select id="menu-opacity" aria-label="小组件不透明度">
+              <option value="">跟随全局</option>
+              <option value="1">100%</option>
+              <option value="0.85">85%</option>
+              <option value="0.7">70%</option>
+              <option value="0.55">55%</option>
+            </select>
+          </label>
+          <label>毛玻璃
+            <select id="menu-glass" aria-label="小组件毛玻璃">
+              <option value="">跟随全局</option>
+              <option value="0">关闭</option>
+              <option value="8">8 px</option>
+              <option value="16">16 px</option>
+              <option value="24">24 px</option>
+            </select>
+          </label>
+        </div>
+        <div class="widget-menu-sep"></div>
         <button data-action="size-default" role="menuitem">回到推荐大小</button>
         <div class="widget-menu-sep"></div>
         <button data-action="lock" role="menuitem" id="lock-menu-btn">锁定位置与尺寸</button>

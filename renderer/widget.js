@@ -7,6 +7,13 @@
 const params = new URLSearchParams(window.location.search);
 const widgetType = params.get('type') || 'month';
 const widgetId = params.get('id') || '';
+const widgetAppearance = {
+  theme: ['inherit', 'classic', 'paper', 'mist'].includes(params.get('theme'))
+    ? params.get('theme')
+    : 'inherit',
+  opacity: params.get('opacity') ? Number(params.get('opacity')) : null,
+  glass: params.get('glass') ? Number(params.get('glass')) : null,
+};
 const content = document.getElementById('widget-content');
 const card = document.getElementById('widget-card');
 const pinButton = document.getElementById('pin-btn');
@@ -14,6 +21,9 @@ const closeButton = document.getElementById('close-btn');
 const widgetMenu = document.getElementById('widget-menu');
 const lockMenuButton = document.getElementById('lock-menu-btn');
 const pinMenuButton = document.getElementById('pin-menu-btn');
+const menuTheme = document.getElementById('menu-theme');
+const menuOpacity = document.getElementById('menu-opacity');
+const menuGlass = document.getElementById('menu-glass');
 
 const WEEKDAY_FULL = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -134,6 +144,10 @@ function normalize(data) {
       weekStart: [0, 1, 6].includes(Number(settings.weekStart)) ? Number(settings.weekStart) : 1,
       schedule: Schedule.normalize(settings.schedule),
       workHours: Workday.normalize(settings.workHours),
+      holidayData:
+        settings.holidayData && typeof settings.holidayData === 'object'
+          ? settings.holidayData
+          : {},
       display: {
         lunar: display.lunar !== false,
         solarTerms: display.solarTerms !== false,
@@ -163,6 +177,10 @@ function calendarFor(event) {
       visible: true,
     }
   );
+}
+
+function eventColor(event) {
+  return event.color || calendarFor(event).color;
 }
 
 function isVisible(event) {
@@ -228,13 +246,15 @@ function upcomingEvents(limit) {
 
 function render() {
   document.body.dataset.type = widgetType;
-  Appearance.applyWidget(state.settings);
+  Appearance.applyWidget(state.settings, widgetAppearance);
+  Holidays.setCustom(state.settings.holidayData);
   updateSizeClass();
   if (widgetType === 'today') renderToday();
   else if (widgetType === 'upcoming') renderUpcoming();
   else if (widgetType === 'monthAgenda') renderMonthAgenda();
   else renderMonth();
   updateMenuLabels();
+  updateAppearanceMenu();
 }
 
 function updateSizeClass() {
@@ -286,7 +306,7 @@ function dotsForDay(day) {
   const events = eventsOnDay(day);
   const colors = [];
   for (const event of events) {
-    const color = calendarFor(event).color;
+    const color = eventColor(event);
     if (!colors.includes(color)) colors.push(color);
     if (colors.length >= 3) break;
   }
@@ -386,7 +406,7 @@ function renderToday() {
         const end = parseLocal(event.end);
         const time = event.allDay ? '全天' : `${formatTime(start)} – ${formatTime(end)}`;
         return `<button class="w-event" style="--i:${index}" data-event-id="${esc(event.id)}" data-occurrence-date="${esc(event.occurrenceDate)}" title="${esc(event.title)}">
-        <span class="w-event-bar" style="--color:${calendar.color}"></span>
+        <span class="w-event-bar" style="--color:${eventColor(event)}"></span>
         <span class="w-event-main">
           <span class="w-event-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(event.title)}</span>
           <span class="w-event-meta">${time}${event.location ? ` · ${esc(event.location)}` : ''}</span>
@@ -473,7 +493,7 @@ function renderUpcoming() {
         <span class="w-up-main">
           <span class="w-up-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(event.title)}</span>
           <span class="w-up-meta">
-            <span class="w-up-dot" style="--color:${calendar.color}"></span>
+            <span class="w-up-dot" style="--color:${eventColor(event)}"></span>
             ${esc(calendar.name)}${event.location ? ` · ${esc(event.location)}` : ''}
           </span>
         </span>
@@ -500,7 +520,7 @@ function renderMonthAgenda() {
       const end = parseLocal(event.end);
       const time = event.allDay ? '全天' : `${formatTime(start)} – ${formatTime(end)}`;
       return `<button class="w-event" data-event-id="${esc(event.id)}" data-occurrence-date="${esc(event.occurrenceDate)}" title="${esc(event.title)}">
-        <span class="w-event-bar" style="--color:${calendar.color}"></span>
+        <span class="w-event-bar" style="--color:${eventColor(event)}"></span>
         <span class="w-event-main">
           <span class="w-event-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(event.title)}</span>
           <span class="w-event-meta">${time}${event.location ? ` · ${esc(event.location)}` : ''}</span>
@@ -668,7 +688,16 @@ widgetMenu.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
-  if (action === 'size-default') {
+  if (action === 'new-event') {
+    window.desktop.widget.openMain({ action: 'new-event' });
+    hideMenu();
+  } else if (action === 'open-view') {
+    window.desktop.widget.openMain({
+      date: ymd(new Date()),
+      view: button.dataset.view || 'month',
+    });
+    hideMenu();
+  } else if (action === 'size-default') {
     const size = DEFAULT_SIZES[widgetType] || DEFAULT_SIZES.month;
     await resizeWidget(size.width, size.height);
   } else if (action === 'lock') {
@@ -820,6 +849,7 @@ celebration?.addEventListener('click', dismissCelebration);
 
 function startParticles(intensity) {
   if (!celebrationCanvas) return;
+  if (state.settings.workHours?.animation === false) return;
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
   stopParticles();
   const ctx = celebrationCanvas.getContext('2d');
@@ -918,6 +948,56 @@ window.desktop.widget.onStoreChanged((data) => {
   });
 });
 
+function updateAppearanceMenu() {
+  if (menuTheme) menuTheme.value = widgetAppearance.theme || 'inherit';
+  if (menuOpacity) {
+    menuOpacity.value =
+      widgetAppearance.opacity === null || widgetAppearance.opacity === undefined
+        ? ''
+        : String(widgetAppearance.opacity);
+  }
+  if (menuGlass) {
+    menuGlass.value =
+      widgetAppearance.glass === null || widgetAppearance.glass === undefined
+        ? ''
+        : String(widgetAppearance.glass);
+  }
+}
+
+async function changeWidgetAppearance(patch) {
+  Object.assign(widgetAppearance, patch);
+  Appearance.applyWidget(state.settings, widgetAppearance);
+  updateAppearanceMenu();
+  try {
+    await window.desktop.widget.setAppearance(widgetAppearance);
+  } catch {
+    // 主进程不可用时仍然保留本次渲染
+  }
+}
+
+menuTheme?.addEventListener('change', () => {
+  changeWidgetAppearance({ theme: menuTheme.value });
+});
+menuOpacity?.addEventListener('change', () => {
+  changeWidgetAppearance({
+    opacity: menuOpacity.value === '' ? null : Number(menuOpacity.value),
+  });
+});
+menuGlass?.addEventListener('change', () => {
+  changeWidgetAppearance({
+    glass: menuGlass.value === '' ? null : Number(menuGlass.value),
+  });
+});
+
+window.desktop.widget.onAppearanceChanged((value) => {
+  if (!value || typeof value !== 'object') return;
+  widgetAppearance.theme = value.theme || 'inherit';
+  widgetAppearance.opacity = value.opacity ?? null;
+  widgetAppearance.glass = value.glass ?? null;
+  Appearance.applyWidget(state.settings, widgetAppearance);
+  updateAppearanceMenu();
+});
+
 window.desktop.widget.onPinChanged((value) => {
   pinned = Boolean(value);
   updatePinButton();
@@ -981,6 +1061,8 @@ window.__widgetTest = {
       size: document.body.dataset.size,
       layout: document.body.dataset.layout,
       theme: document.documentElement.dataset.theme,
+      alpha: getComputedStyle(document.documentElement).getPropertyValue('--panel-alpha').trim(),
+      alphaClass: document.body.classList.contains('widget-alpha'),
       events: state.events.length,
       days: document.querySelectorAll('.w-day').length,
       restDays: document.querySelectorAll('.w-day.rest').length,

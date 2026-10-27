@@ -27,6 +27,7 @@
     celebrate: true,
     lunch: true,
     off: true,
+    animation: true,
   };
 
   const LUNCH_POEMS = [
@@ -121,6 +122,7 @@
       celebrate: source.celebrate !== false,
       lunch: source.lunch !== false,
       off: source.off !== false,
+      animation: source.animation !== false,
     };
   }
 

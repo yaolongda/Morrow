@@ -35,12 +35,24 @@ const DEFAULT_DISPLAY = {
   solarTerms: true,
   almanac: false,
   zodiac: false,
+  weekNumbers: false,
 };
 
 const DEFAULT_PLAN_SETTINGS = {
   showInMonth: true,
   showInWeek: true,
   reminders: true,
+};
+
+const DEFAULT_SHORTCUTS = {
+  today: 't',
+  day: 'd',
+  week: 'w',
+  month: 'm',
+  year: 'y',
+  newPlan: 'p',
+  prev: 'ArrowLeft',
+  next: 'ArrowRight',
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -92,6 +104,16 @@ function sameDay(a, b) {
 
 function daysBetween(from, to) {
   return Math.round((startOfDay(to) - startOfDay(from)) / 86400000);
+}
+
+function isoWeek(date) {
+  const target = startOfDay(date);
+  const day = (target.getDay() + 6) % 7;
+  target.setDate(target.getDate() - day + 3);
+  const firstThursday = new Date(target.getFullYear(), 0, 4);
+  const firstDay = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDay + 3);
+  return 1 + Math.round((target - firstThursday) / (7 * 86400000));
 }
 
 function ymd(date) {
@@ -172,16 +194,23 @@ function colorMix(hex, mix, alpha = 1) {
 /* ------------------------------------------------------------------ */
 
 let state = {
-  version: 2,
+  version: 3,
   calendars: DEFAULT_CALENDARS,
   events: [],
   plans: [],
+  tasks: [],
+  eventTemplates: [],
+  trash: [],
   settings: {
     weekStart: 1,
     defaultCalendarId: 'work',
     lastView: 'month',
     sidebarVisible: true,
     schedule: Schedule.defaultSchedule(),
+    workHours: Workday.defaults(),
+    holidayData: {},
+    shiftTemplates: [],
+    shortcuts: { ...DEFAULT_SHORTCUTS },
     appearance: { ...DEFAULT_APPEARANCE },
     display: { ...DEFAULT_DISPLAY },
     plans: { ...DEFAULT_PLAN_SETTINGS },
@@ -190,16 +219,22 @@ let state = {
 
 let view = 'month';
 let cursor = startOfDay(new Date());
+const navPast = [];
+const navFuture = [];
+let navSuppress = false;
 let sidebarVisible = true;
 let editingEventId = null;
 let editingOccurrenceDate = null;
 let editingScope = 'single';
 let editingSeriesRecurrence = null;
+let editingAttachments = [];
 let calendarDialogMode = 'add';
 let editingCalendarId = null;
 let contextCalendarId = null;
 let pendingConfirm = null;
 let searchQuery = '';
+let searchFrom = '';
+let searchTo = '';
 let timeScrollTop = null;
 let saveTimer = null;
 let toastTimer = null;
@@ -208,6 +243,7 @@ let currentDayKey = ymd(new Date());
 let galleryWidgets = [];
 let dragState = null;
 let reminderShown = false;
+let allDayExpanded = false;
 
 const mainView = $('#main-view');
 const eventOverlay = $('#event-overlay');
@@ -217,6 +253,8 @@ const widgetOverlay = $('#widget-overlay');
 const settingsOverlay = $('#settings-overlay');
 const planOverlay = $('#plan-overlay');
 const reminderOverlay = $('#reminder-overlay');
+const eventReminderOverlay = $('#event-reminder-overlay');
+const icsOverlay = $('#ics-overlay');
 const calendarMenu = $('#calendar-menu');
 const appMenu = $('#app-menu');
 const searchInput = $('#search-input');
@@ -227,11 +265,163 @@ const toast = $('#toast');
 /* 状态标准化                                                          */
 /* ------------------------------------------------------------------ */
 
+function normalizeShortcuts(input) {
+  const result = { ...DEFAULT_SHORTCUTS };
+  if (!input || typeof input !== 'object') return result;
+  for (const action of Object.keys(DEFAULT_SHORTCUTS)) {
+    const value = typeof input[action] === 'string' ? input[action].trim() : '';
+    if (!value) continue;
+    if (value.length === 1) result[action] = value.toLowerCase();
+    else if (/^Arrow(Left|Right|Up|Down)$/i.test(value)) {
+      result[action] = value[0].toUpperCase() + value.slice(1).toLowerCase();
+    }
+  }
+  return result;
+}
+
+function normalizeEventReminder(input) {
+  if (!input || typeof input !== 'object') return null;
+  const minutes = Math.round(Number(input.minutes));
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 10080) return null;
+  return { minutes, system: input.system === true };
+}
+
+function normalizeHolidayData(input) {
+  if (!input || typeof input !== 'object') return {};
+  return window.Holidays ? Holidays.parse(input) : {};
+}
+
+function normalizeShiftTemplates(input) {
+  const result = [];
+  const seen = new Set();
+  for (const template of Array.isArray(input) ? input : []) {
+    if (!template || typeof template !== 'object') continue;
+    const name = typeof template.name === 'string' ? template.name.trim() : '';
+    if (!name) continue;
+    let id = template.id != null ? String(template.id) : '';
+    if (!id || seen.has(id)) id = makeId('shift');
+    seen.add(id);
+    result.push({
+      id,
+      name: name.slice(0, 20),
+      workHours: Workday.normalize(template.workHours),
+    });
+    if (result.length >= 20) break;
+  }
+  return result;
+}
+
+function normalizeMilestoneMessages(input) {
+  const result = {};
+  if (!input || typeof input !== 'object') return result;
+  for (const [key, value] of Object.entries(input)) {
+    const milestone = Number(key);
+    if (![20, 50, 75, 80, 90, 100].includes(milestone)) continue;
+    if (typeof value !== 'string' || !value.trim()) continue;
+    result[milestone] = value.trim().slice(0, 120);
+  }
+  return result;
+}
+
+function normalizeAttachments(input) {
+  const result = [];
+  for (const value of Array.isArray(input) ? input : []) {
+    if (typeof value !== 'string') continue;
+    if (!value.startsWith('data:image/')) continue;
+    if (value.length > 400000) continue;
+    result.push(value);
+    if (result.length >= 3) break;
+  }
+  return result;
+}
+
+function normalizeEventTemplates(input) {
+  const result = [];
+  const seen = new Set();
+  for (const template of Array.isArray(input) ? input : []) {
+    if (!template || typeof template !== 'object') continue;
+    const name = typeof template.name === 'string' ? template.name.trim() : '';
+    if (!name) continue;
+    let id = template.id != null ? String(template.id) : '';
+    if (!id || seen.has(id)) id = makeId('template');
+    seen.add(id);
+    result.push({
+      id,
+      name: name.slice(0, 60),
+      title: typeof template.title === 'string' ? template.title.slice(0, 200) : '',
+      calendarId: typeof template.calendarId === 'string' ? template.calendarId : '',
+      allDay: template.allDay === true,
+      duration: Math.max(15, Math.min(10080, Math.round(Number(template.duration) || 60))),
+      startTime: /^\d{2}:\d{2}$/.test(template.startTime || '') ? template.startTime : '09:00',
+      location: typeof template.location === 'string' ? template.location.slice(0, 200) : '',
+      notes: typeof template.notes === 'string' ? template.notes.slice(0, 2000) : '',
+      reminder: normalizeEventReminder(template.reminder),
+      color: /^#[0-9a-f]{6}$/i.test(template.color || '') ? template.color : null,
+    });
+    if (result.length >= 30) break;
+  }
+  return result;
+}
+
+function normalizeTasks(input) {
+  const result = [];
+  const seen = new Set();
+  for (const task of Array.isArray(input) ? input : []) {
+    if (!task || typeof task !== 'object') continue;
+    const title = typeof task.title === 'string' ? task.title.trim() : '';
+    if (!title) continue;
+    let id = task.id != null ? String(task.id) : '';
+    if (!id || seen.has(id)) id = makeId('task');
+    seen.add(id);
+    const due = typeof task.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.due)
+      ? task.due
+      : '';
+    result.push({
+      id,
+      title: title.slice(0, 160),
+      done: task.done === true,
+      due,
+      createdAt:
+        typeof task.createdAt === 'string' ? task.createdAt : new Date().toISOString(),
+    });
+    if (result.length >= 500) break;
+  }
+  return result;
+}
+
+function normalizeTrash(input) {  const result = [];
+  const now = Date.now();
+  for (const entry of Array.isArray(input) ? input : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const kind = ['event', 'plan', 'occurrence', 'series-split'].includes(entry.kind)
+      ? entry.kind
+      : null;
+    if (!kind) continue;
+    const deletedAt = typeof entry.deletedAt === 'string' ? entry.deletedAt : '';
+    const deletedTime = Date.parse(deletedAt);
+    if (!Number.isFinite(deletedTime) || now - deletedTime > 30 * 86400000) continue;
+    const item =
+      entry.item && typeof entry.item === 'object' ? entry.item : null;
+    const meta =
+      entry.meta && typeof entry.meta === 'object' ? entry.meta : {};
+    if (kind !== 'occurrence' && !item) continue;
+    result.push({
+      id: entry.id != null ? String(entry.id) : makeId('trash'),
+      kind,
+      deletedAt,
+      title: typeof entry.title === 'string' ? entry.title.slice(0, 200) : '',
+      item,
+      meta,
+    });
+    if (result.length >= 300) break;
+  }
+  return result;
+}
+
 function normalizeState(data) {
   const source = data && typeof data === 'object' ? data : {};
   const seenCalendars = new Set();
   let calendars = [];
-
   for (const calendar of Array.isArray(source.calendars) ? source.calendars : []) {
     if (!calendar || typeof calendar !== 'object') continue;
     const name = typeof calendar.name === 'string' ? calendar.name.trim() : '';
@@ -280,9 +470,13 @@ function normalizeState(data) {
       start: event.start,
       end: event.end,
       allDay: event.allDay === true,
+      color: /^#[0-9a-f]{6}$/i.test(event.color || '') ? event.color : null,
       location: typeof event.location === 'string' ? event.location.slice(0, 200) : '',
       notes: typeof event.notes === 'string' ? event.notes.slice(0, 2000) : '',
+      attachments: normalizeAttachments(event.attachments),
       recurrence: Recurrence.normalize(event.recurrence),
+      reminder: normalizeEventReminder(event.reminder),
+      uid: typeof event.uid === 'string' ? event.uid.slice(0, 200) : '',
     });
     if (events.length >= 20000) break;
   }
@@ -332,7 +526,12 @@ function normalizeState(data) {
       calendarId,
       progress: clamp(Math.round(Number(plan.progress) || 0), 0, 100),
       autoProgress: plan.autoProgress === true,
+      archived: plan.archived === true,
+      repeat: ['none', 'monthly', 'quarterly', 'yearly'].includes(plan.repeat)
+        ? plan.repeat
+        : 'none',
       milestonesSeen,
+      milestoneMessages: normalizeMilestoneMessages(plan.milestoneMessages),
       reminders,
       notes: typeof plan.notes === 'string' ? plan.notes.slice(0, 2000) : '',
     });
@@ -393,6 +592,7 @@ function normalizeState(data) {
     solarTerms: sourceDisplay.solarTerms !== false,
     almanac: sourceDisplay.almanac === true,
     zodiac: sourceDisplay.zodiac === true,
+    weekNumbers: sourceDisplay.weekNumbers === true,
   };
   const sourcePlanSettings =
     sourceSettings.plans && typeof sourceSettings.plans === 'object'
@@ -409,6 +609,9 @@ function normalizeState(data) {
     calendars,
     events,
     plans,
+    tasks: normalizeTasks(source.tasks),
+    eventTemplates: normalizeEventTemplates(source.eventTemplates),
+    trash: normalizeTrash(source.trash),
     settings: {
       weekStart,
       defaultCalendarId,
@@ -416,6 +619,9 @@ function normalizeState(data) {
       sidebarVisible: sourceSettings.sidebarVisible !== false,
       schedule: Schedule.normalize(sourceSettings.schedule),
       workHours: Workday.normalize(sourceSettings.workHours),
+      holidayData: normalizeHolidayData(sourceSettings.holidayData),
+      shiftTemplates: normalizeShiftTemplates(sourceSettings.shiftTemplates),
+      shortcuts: normalizeShortcuts(sourceSettings.shortcuts),
       appearance,
       display,
       plans: planSettings,
@@ -431,7 +637,110 @@ function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     window.desktop.saveData(state).catch(() => {});
+    syncReminders();
   }, 180);
+}
+
+/* ------------------------------------------------------------------ */
+/* 撤销 / 重做 与 回收站                                                */
+/* ------------------------------------------------------------------ */
+
+const HISTORY_LIMIT = 30;
+let historyPast = [];
+let historyFuture = [];
+
+function snapshotState() {
+  return JSON.parse(
+    JSON.stringify({
+      events: state.events,
+      plans: state.plans,
+      tasks: state.tasks,
+      calendars: state.calendars,
+      trash: state.trash || [],
+      settings: {
+        schedule: state.settings.schedule,
+        workHours: state.settings.workHours,
+        holidayData: state.settings.holidayData,
+        shiftTemplates: state.settings.shiftTemplates,
+        shortcuts: state.settings.shortcuts,
+        display: state.settings.display,
+        plans: state.settings.plans,
+      },
+    })
+  );
+}
+
+function recordHistory(label) {
+  historyPast.push({ label, snapshot: snapshotState() });
+  if (historyPast.length > HISTORY_LIMIT) historyPast.shift();
+  historyFuture.length = 0;
+}
+
+function restoreHistory(direction) {
+  const from = direction === 'undo' ? historyPast : historyFuture;
+  const to = direction === 'undo' ? historyFuture : historyPast;
+  if (from.length === 0) {
+    showToast(direction === 'undo' ? '没有可撤销的操作' : '没有可重做的操作');
+    return;
+  }
+  const entry = from.pop();
+  to.push({ label: entry.label, snapshot: snapshotState() });
+  state.events = entry.snapshot.events;
+  state.plans = entry.snapshot.plans;
+  state.tasks = entry.snapshot.tasks || [];
+  state.calendars = entry.snapshot.calendars;
+  state.trash = entry.snapshot.trash || [];
+  if (entry.snapshot.settings) {
+    for (const key of [
+      'schedule',
+      'workHours',
+      'holidayData',
+      'shiftTemplates',
+      'shortcuts',
+      'display',
+      'plans',
+    ]) {
+      if (entry.snapshot.settings[key] !== undefined) {
+        state.settings[key] = entry.snapshot.settings[key];
+      }
+    }
+    Holidays.setCustom(state.settings.holidayData);
+  }
+  closeAllPopups();
+  saveState();
+  render();
+  showToast(`${direction === 'undo' ? '已撤销' : '已重做'}：${entry.label}`);
+}
+
+function undo() {
+  restoreHistory('undo');
+}
+
+function redo() {
+  restoreHistory('redo');
+}
+
+function addTrashEntry(entry) {
+  state.trash = state.trash || [];
+  state.trash.unshift({
+    id: makeId('trash'),
+    deletedAt: new Date().toISOString(),
+    ...entry,
+  });
+  if (state.trash.length > 300) state.trash.length = 300;
+}
+
+function removeTrashEntry(id) {
+  state.trash = (state.trash || []).filter((entry) => entry.id !== id);
+}
+
+function moveEventToTrash(event) {
+  addTrashEntry({
+    kind: 'event',
+    title: event.title,
+    item: JSON.parse(JSON.stringify(event)),
+    meta: {},
+  });
 }
 
 function calendarById(id) {
@@ -447,6 +756,10 @@ function calendarFor(event) {
       visible: true,
     }
   );
+}
+
+function eventColor(event) {
+  return event?.color || calendarFor(event).color;
 }
 
 function isEventVisible(event) {
@@ -612,6 +925,9 @@ function renderDayBrief() {
       <span class="brief-yi">宜</span><span>${brief.yi.slice(0, 3).join(' · ')}</span>
       <span class="brief-ji">忌</span><span>${brief.ji.slice(0, 3).join(' · ')}</span>
     </div>`);
+    if (brief.chongSha) {
+      parts.push(`<div class="brief-chongsha">${esc(brief.chongSha)}</div>`);
+    }
   }
   if (display.zodiac) {
     parts.push(`<div class="brief-zodiac">${brief.zodiac.sign} <span class="brief-stars">${brief.zodiac.stars}</span><span class="brief-lucky">幸运色 ${brief.zodiac.luckyColor} · 数字 ${brief.zodiac.luckyNumber}</span></div>`);
@@ -673,6 +989,7 @@ function render() {
   renderMiniCalendar();
   renderCalendarList();
   renderPlanList();
+  renderTaskList();
   renderDayBrief();
   renderMainView();
   if (searchInput.value.trim()) renderSearchResults();
@@ -758,6 +1075,186 @@ function renderPlanList() {
     .join('');
 }
 
+function tasksForDay(day) {
+  const key = ymd(day);
+  return (state.tasks || []).filter((task) => task.due === key);
+}
+
+function todayTasks() {
+  const today = ymd(new Date());
+  return (state.tasks || [])
+    .filter((task) => !task.done && task.due && task.due <= today)
+    .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt.localeCompare(b.createdAt));
+}
+
+function taskDueLabel(task) {
+  const today = ymd(new Date());
+  if (!task.due) return '';
+  if (task.due === today) return '今天';
+  if (task.due < today) return '逾期';
+  return task.due.slice(5).replace('-', '/');
+}
+
+function renderTaskList() {
+  const list = $('#task-list');
+  if (!list) return;
+  const tasks = todayTasks().slice(0, 5);
+  list.innerHTML = tasks.length
+    ? tasks
+        .map(
+          (task) => `<button class="task-row ${task.done ? 'done' : ''}" data-task-toggle="${esc(
+            task.id
+          )}" title="${esc(task.title)}">
+            <span class="task-check">${task.done ? '✓' : ''}</span>
+            <span class="task-title">${esc(task.title)}</span>
+            <span class="task-due ${task.due < ymd(new Date()) ? 'overdue' : ''}">${esc(
+              taskDueLabel(task)
+            )}</span>
+          </button>`
+        )
+        .join('')
+    : '<div class="task-empty">今天还没有任务</div>';
+}
+
+function renderTaskOverlay() {
+  const list = $('#task-overlay-list');
+  if (!list) return;
+  const tasks = [...(state.tasks || [])].sort((a, b) => {
+    if (a.done !== b.done) return a.done ? 1 : -1;
+    return String(a.due).localeCompare(String(b.due)) ||
+      String(a.createdAt).localeCompare(String(b.createdAt));
+  });
+  list.innerHTML = tasks.length
+    ? tasks
+        .map(
+          (task) => `<div class="task-overlay-row ${task.done ? 'done' : ''}" data-task-id="${esc(
+            task.id
+          )}">
+            <button type="button" class="task-check-btn" data-task-toggle="${esc(task.id)}">${
+              task.done ? '✓' : ''
+            }</button>
+            <input class="task-title-input" data-task-title="${esc(task.id)}" maxlength="160" value="${esc(
+              task.title
+            )}" aria-label="任务名称">
+            <input type="date" class="task-due-input" data-task-due="${esc(task.id)}" value="${esc(
+              task.due || ''
+            )}" aria-label="截止日期">
+            <button type="button" class="task-delete-btn" data-task-delete="${esc(
+              task.id
+            )}" aria-label="删除任务">×</button>
+          </div>`
+        )
+        .join('')
+    : '<p class="task-empty">还没有任务。加一件今天想完成的小事吧。</p>';
+}
+
+function toggleTask(taskId) {
+  const task = (state.tasks || []).find((item) => item.id === taskId);
+  if (!task) return;
+  task.done = !task.done;
+  saveState();
+  render();
+  if (!$('#task-overlay').classList.contains('hidden')) renderTaskOverlay();
+}
+
+function addTask(title, due) {
+  const trimmed = String(title || '').trim();
+  if (!trimmed) return null;
+  const task = {
+    id: makeId('task'),
+    title: trimmed.slice(0, 160),
+    done: false,
+    due: /^\d{4}-\d{2}-\d{2}$/.test(due || '') ? due : ymd(new Date()),
+    createdAt: new Date().toISOString(),
+  };
+  state.tasks = state.tasks || [];
+  state.tasks.push(task);
+  saveState();
+  render();
+  if (!$('#task-overlay').classList.contains('hidden')) renderTaskOverlay();
+  return task;
+}
+
+function openTaskOverlay() {
+  closeAllPopups();
+  renderTaskOverlay();
+  $('#task-new-due').value = ymd(new Date());
+  $('#task-overlay').classList.remove('hidden');
+}
+
+function closeTaskOverlay() {
+  $('#task-overlay').classList.add('hidden');
+}
+
+$('#task-add-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const input = $('#task-input');
+  if (!input.value.trim()) return;
+  addTask(input.value, ymd(new Date()));
+  input.value = '';
+});
+
+$('#all-tasks-btn').addEventListener('click', openTaskOverlay);
+$('#task-close').addEventListener('click', closeTaskOverlay);
+$('#task-overlay').addEventListener('mousedown', (event) => {
+  if (event.target.id === 'task-overlay') closeTaskOverlay();
+});
+
+$('#task-overlay-add').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const title = $('#task-new-title');
+  const due = $('#task-new-due');
+  if (!title.value.trim()) return;
+  addTask(title.value, due.value || ymd(new Date()));
+  title.value = '';
+  title.focus();
+});
+
+$('#task-list').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-task-toggle]');
+  if (toggle) toggleTask(toggle.dataset.taskToggle);
+});
+
+$('#task-overlay-list').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-task-toggle]');
+  if (toggle) {
+    toggleTask(toggle.dataset.taskToggle);
+    return;
+  }
+  const remove = event.target.closest('[data-task-delete]');
+  if (remove) {
+    const id = remove.dataset.taskDelete;
+    recordHistory?.('删除任务');
+    state.tasks = (state.tasks || []).filter((task) => task.id !== id);
+    saveState();
+    render();
+    renderTaskOverlay();
+  }
+});
+
+$('#task-overlay-list').addEventListener('change', (event) => {
+  const title = event.target.closest('[data-task-title]');
+  if (title) {
+    const task = (state.tasks || []).find((item) => item.id === title.dataset.taskTitle);
+    if (task) {
+      task.title = title.value.trim().slice(0, 160) || task.title;
+      saveState();
+      render();
+    }
+    return;
+  }
+  const due = event.target.closest('[data-task-due]');
+  if (due) {
+    const task = (state.tasks || []).find((item) => item.id === due.dataset.taskDue);
+    if (task) {
+      task.due = due.value || '';
+      saveState();
+      render();
+      renderTaskOverlay();
+    }
+  }
+});
+
 function renderMainView() {
   if (view === 'month') renderMonthView();
   else if (view === 'week') renderTimeView('week');
@@ -778,6 +1275,14 @@ function renderMonthView() {
   const weekdayHTML = weekdayOrder()
     .map((day) => `<div class="month-weekday">${WEEKDAY_SHORT[day]}</div>`)
     .join('');
+  const showWeekNumbers = displayPrefs().weekNumbers === true;
+  const weeknumHead = showWeekNumbers ? '<div class="month-weeknum-head">周</div>' : '';
+  const weeknumColumn = showWeekNumbers
+    ? `<div class="weeknum-column">${Array.from(
+        { length: 6 },
+        (_, index) => `<span>W${isoWeek(addDays(gridStart, index * 7))}</span>`
+      ).join('')}</div>`
+    : '';
 
   const cellsHTML = Array.from({ length: 42 }, (_, index) => {
     const day = addDays(gridStart, index);
@@ -789,6 +1294,9 @@ function renderMonthView() {
     const holiday = window.Holidays?.info(day);
     const holidayClass =
       holiday?.type === 'holiday' ? 'is-holiday' : holiday?.type === 'workday' ? 'is-makeup' : '';
+    const taskCount = (state.tasks || []).filter(
+      (task) => !task.done && task.due === ymd(day)
+    ).length;
     const events = eventsOnDay(day);
     const plans = showPlans ? plansOnDay(day) : [];
 
@@ -817,8 +1325,8 @@ function renderMonthView() {
         return `<button class="event-chip ${recurring ? 'is-recurring' : ''}" data-event-id="${esc(
           event.id
         )}" data-occurrence-date="${esc(event.occurrenceDate)}" style="--ev-color:${
-          calendar.color
-        };--ev-text:${textColorOn(calendar.color)}" title="${esc(tooltip)}">${
+          eventColor(event)
+        };--ev-text:${textColorOn(eventColor(event))}" title="${esc(tooltip)}">${
           recurring ? '<span class="chip-repeat" aria-hidden="true">↻</span>' : ''
         }<span class="chip-title">${esc(event.title)}</span></button>`;
       })
@@ -832,6 +1340,7 @@ function renderMonthView() {
         ${extra ? `<span class="day-lunar ${extra.isTerm ? 'is-term' : ''} ${
           extra.isHoliday ? 'is-holiday' : ''
         } ${extra.isMakeup ? 'is-makeup' : ''}">${esc(extra.text)}</span>` : ''}
+        ${taskCount ? `<span class="day-task-count" title="${taskCount} 个任务">✓${taskCount}</span>` : ''}
       </div>
       ${plans.length ? `<div class="month-plans">${planChips.join('')}${planMore}</div>` : ''}
       <div class="month-events">
@@ -841,9 +1350,9 @@ function renderMonthView() {
     </div>`;
   }).join('');
 
-  mainView.innerHTML = `<div class="month-view">
-    <div class="month-weekdays">${weekdayHTML}</div>
-    <div class="month-grid">${cellsHTML}</div>
+  mainView.innerHTML = `<div class="month-view ${showWeekNumbers ? 'with-weeknums' : ''}">
+    <div class="month-weekdays">${weeknumHead}${weekdayHTML}</div>
+    <div class="month-grid-wrap">${weeknumColumn}<div class="month-grid">${cellsHTML}</div></div>
   </div>`;
 
   requestAnimationFrame(fitMonthCells);
@@ -915,8 +1424,12 @@ function renderTimeView(mode) {
       </div>`
     : '';
 
-  const allDay = buildAllDayLayout(days);
-  const bandHeight = Math.max(28, 6 + allDay.lanes * 21);
+  const allDay = buildAllDayLayout(days, mode === 'day' ? 3 : 2);
+  const bandHeight = Math.max(28, 6 + allDay.bandLanes * 21);
+  const showWeekNumbers = displayPrefs().weekNumbers === true;
+  const weekBadge = showWeekNumbers
+    ? `<span class="weeknum-badge">W${isoWeek(days[0])}</span>`
+    : '';
 
   const hours = Array.from({ length: 23 }, (_, index) => index + 1)
     .map(
@@ -942,7 +1455,7 @@ function renderTimeView(mode) {
 
   mainView.innerHTML = `<div class="time-view ${mode === 'day' ? 'day-mode' : ''}">
     <div class="time-head">
-      <div class="head-gutter"></div>
+      <div class="head-gutter">${weekBadge}</div>
       <div class="day-heads">${heads}</div>
     </div>
     ${planBand}
@@ -1017,7 +1530,7 @@ function buildPlanLayout(days) {
   return { html, lanes: laneEnds.length };
 }
 
-function buildAllDayLayout(days) {
+function buildAllDayLayout(days, maxLanes = 3) {
   const rangeStart = startOfDay(days[0]);
   const rangeEnd = addDays(startOfDay(days[days.length - 1]), 1);
   const items = [];
@@ -1055,6 +1568,7 @@ function buildAllDayLayout(days) {
   }
 
   const html = items
+    .filter((item) => allDayExpanded || item.lane < maxLanes)
     .map((item) => {
       const calendar = calendarFor(item.event);
       const span = item.endIndex - item.startIndex + 1;
@@ -1071,12 +1585,30 @@ function buildAllDayLayout(days) {
       )}" data-occurrence-date="${esc(item.event.occurrenceDate)}"
         style="left:calc(${left}% + 3px);width:calc(${width}% - 6px);top:${
         4 + item.lane * 21
-      }px;--ev-color:${calendar.color};--ev-text:${textColorOn(calendar.color)}"
+      }px;--ev-color:${eventColor(item.event)};--ev-text:${textColorOn(eventColor(item.event))}"
         title="${esc(tooltip)}">${esc(item.event.title)}</button>`;
     })
     .join('');
 
-  return { html, lanes: laneEnds.length };
+  const totalLanes = laneEnds.length;
+  const visibleLanes = allDayExpanded ? totalLanes : Math.min(totalLanes, maxLanes);
+  const hiddenCount = items.filter((item) => item.lane >= visibleLanes).length;
+  const showToggle = totalLanes > maxLanes;
+  const toggleHTML = showToggle
+    ? `<button type="button" class="allday-more" data-action="toggle-allday" style="top:${
+        4 + visibleLanes * 21
+      }px">${
+        allDayExpanded ? '收起全天日程' : `还有 ${hiddenCount} 个全天日程`
+      }</button>`
+    : '';
+
+  return {
+    html: html + toggleHTML,
+    lanes: totalLanes,
+    bandLanes: visibleLanes + (showToggle ? 1 : 0),
+    hiddenCount,
+    expanded: allDayExpanded,
+  };
 }
 
 function buildTimedBlocks(day) {
@@ -1159,8 +1691,8 @@ function buildTimedBlocks(day) {
         item.event.occurrenceDate
       )}"
         style="left:calc(${left}% + 1px);width:calc(${width}% - 3px);top:${top}px;height:${height}px;--ev-color:${
-        calendar.color
-      };--ev-text:${textColorOn(calendar.color)}"
+        eventColor(item.event)
+      };--ev-text:${textColorOn(eventColor(item.event))}"
         title="${esc(tooltip)}">
         <span class="te-title">${recurring ? '<span class="te-repeat" aria-hidden="true">↻</span>' : ''}${esc(
           item.event.title
@@ -1236,7 +1768,7 @@ function renderYearView() {
           .slice(0, 3)
           .map((event) => {
             const calendar = calendarFor(event);
-            return `<span class="yd-dot" style="--color:${calendar.color}"></span>`;
+            return `<span class="yd-dot" style="--color:${eventColor(event)}"></span>`;
           })
           .join('');
         return `<div class="year-day ${sameDay(day, today) ? 'today' : ''} ${
@@ -1269,8 +1801,55 @@ function renderYearView() {
 /* 交互：导航                                                          */
 /* ------------------------------------------------------------------ */
 
+function navSnapshot() {
+  return { view, cursor: ymd(cursor) };
+}
+
+function updateNavButtons() {
+  const back = $('#nav-back-btn');
+  const forward = $('#nav-forward-btn');
+  if (back) back.disabled = navPast.length === 0;
+  if (forward) forward.disabled = navFuture.length === 0;
+}
+
+function pushNavHistory() {
+  if (navSuppress) return;
+  const snapshot = navSnapshot();
+  const last = navPast[navPast.length - 1];
+  if (last && last.view === snapshot.view && last.cursor === snapshot.cursor) return;
+  navPast.push(snapshot);
+  if (navPast.length > 80) navPast.shift();
+  navFuture.length = 0;
+  updateNavButtons();
+}
+
+function applyNavSnapshot(snapshot) {
+  if (!snapshot) return;
+  navSuppress = true;
+  view = ['month', 'week', 'day', 'year'].includes(snapshot.view) ? snapshot.view : 'month';
+  cursor = startOfDay(parseLocal(snapshot.cursor));
+  timeScrollTop = null;
+  saveState();
+  render();
+  navSuppress = false;
+  updateNavButtons();
+}
+
+function navigateBack() {
+  if (navPast.length === 0) return;
+  navFuture.push(navSnapshot());
+  applyNavSnapshot(navPast.pop());
+}
+
+function navigateForward() {
+  if (navFuture.length === 0) return;
+  navPast.push(navSnapshot());
+  applyNavSnapshot(navFuture.pop());
+}
+
 function navigate(step) {
   captureTimeScroll();
+  pushNavHistory();
   if (view === 'month') cursor = startOfDay(addMonths(cursor, step));
   else if (view === 'week') cursor = addDays(cursor, step * 7);
   else if (view === 'day') cursor = addDays(cursor, step);
@@ -1279,14 +1858,18 @@ function navigate(step) {
 }
 
 function goToday() {
+  pushNavHistory();
   captureTimeScroll();
   cursor = startOfDay(new Date());
+  view = 'month';
+  saveState();
   render();
 }
 
 function switchView(nextView) {
   if (!['month', 'week', 'day', 'year'].includes(nextView)) return;
   captureTimeScroll();
+  pushNavHistory();
   view = nextView;
   timeScrollTop = null;
   saveState();
@@ -1295,6 +1878,7 @@ function switchView(nextView) {
 
 function openDayView(date) {
   captureTimeScroll();
+  pushNavHistory();
   cursor = startOfDay(parseLocal(date));
   view = 'day';
   timeScrollTop = null;
@@ -1328,7 +1912,10 @@ mainView.addEventListener('click', (event) => {
 
   if (action === 'open-day') openDayView(actionNode.dataset.date);
   else if (action === 'more') openDayView(actionNode.dataset.date);
-  else if (action === 'day-head') {
+  else if (action === 'toggle-allday') {
+    allDayExpanded = !allDayExpanded;
+    render();
+  } else if (action === 'day-head') {
     if (view !== 'day') openDayView(actionNode.dataset.date);
   } else if (action === 'open-month') {
     cursor = new Date(cursor.getFullYear(), Number(actionNode.dataset.month), 1);
@@ -1460,10 +2047,13 @@ function onDragEnd() {
 $('#today-btn').addEventListener('click', goToday);
 $('#prev-btn').addEventListener('click', () => navigate(-1));
 $('#next-btn').addEventListener('click', () => navigate(1));
+$('#nav-back-btn').addEventListener('click', navigateBack);
+$('#nav-forward-btn').addEventListener('click', navigateForward);
 $('#add-btn').addEventListener('click', () => openEventDialog({}));
 $('#widgets-btn').addEventListener('click', openWidgetGallery);
 $('#settings-btn').addEventListener('click', () => openSettings('general'));
 $('#add-plan-btn').addEventListener('click', () => openPlanEditor(null));
+$('#plans-all-btn').addEventListener('click', () => openSettings('plans'));
 
 $('#view-switch').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-view]');
@@ -1589,7 +2179,7 @@ searchInput.addEventListener('keydown', (event) => {
     const first = $('.search-item', searchResults);
     if (first) {
       event.preventDefault();
-      openSearchResult(first.dataset.eventId);
+      openSearchResult(first.dataset.eventId, first.dataset.occurrenceDate);
     }
   }
 });
@@ -1604,12 +2194,49 @@ function renderSearchResults() {
 
   const needle = query.toLowerCase();
   const now = new Date();
+  const hasRange =
+    /^\d{4}-\d{2}-\d{2}$/.test(searchFrom) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(searchTo) &&
+    searchTo >= searchFrom;
+  const rangeStart = hasRange ? startOfDay(parseLocal(searchFrom)) : null;
+  const rangeEnd = hasRange ? addDays(startOfDay(parseLocal(searchTo)), 1) : null;
   const horizon = addDays(startOfDay(now), 366);
   const matches = [];
+
   for (const event of state.events) {
     if (!isEventVisible(event)) continue;
     const haystack = `${event.title} ${event.location || ''} ${event.notes || ''}`.toLowerCase();
     if (!haystack.includes(needle)) continue;
+
+    if (hasRange) {
+      if (Recurrence.isRecurring(event)) {
+        for (const occurrence of Recurrence.expand(event, rangeStart, rangeEnd)) {
+          const display = withOccurrence(event, occurrence);
+          matches.push({
+            event,
+            occurrenceDate: occurrence.occurrenceDate,
+            display,
+            start: parseLocal(display.start),
+            past: parseLocal(display.end) < now,
+          });
+          if (matches.length >= 120) break;
+        }
+      } else {
+        const start = parseLocal(event.start);
+        const end = parseLocal(event.end);
+        if (end > rangeStart && start < rangeEnd) {
+          matches.push({
+            event,
+            occurrenceDate: null,
+            display: event,
+            start,
+            past: end < now,
+          });
+        }
+      }
+      continue;
+    }
+
     const occurrence = Recurrence.isRecurring(event)
       ? Recurrence.expand(event, now, horizon)[0] || null
       : null;
@@ -1624,26 +2251,42 @@ function renderSearchResults() {
       past: end.getTime() < now.getTime(),
     });
   }
+
   matches.sort((a, b) => {
     if (a.past !== b.past) return a.past ? 1 : -1;
-    return a.past ? b.start - a.start : a.start - b.start;
+    return hasRange ? a.start - b.start : a.past ? b.start - a.start : a.start - b.start;
   });
-  const limited = matches.slice(0, 12);
+  const limited = matches.slice(0, hasRange ? 50 : 12);
+
+  const header = `<div class="search-range">
+    <input type="date" id="search-from" value="${esc(searchFrom)}" aria-label="搜索开始日期">
+    <span>至</span>
+    <input type="date" id="search-to" value="${esc(searchTo)}" aria-label="搜索结束日期">
+    ${
+      searchFrom || searchTo
+        ? '<button type="button" class="search-range-clear" data-action="clear-search-range">清除</button>'
+        : ''
+    }
+  </div>`;
 
   searchResults.classList.remove('hidden');
   if (limited.length === 0) {
-    searchResults.innerHTML = `<div class="search-empty">没有找到“${esc(query)}”</div>`;
+    searchResults.innerHTML = `${header}<div class="search-empty">没有找到“${esc(query)}”${
+      hasRange ? '，试试调整日期范围' : ''
+    }</div>`;
     return;
   }
 
-  searchResults.innerHTML = limited
-    .map(({ event, display, occurrenceDate }) => {
-      const calendar = calendarFor(event);
-      const recurring = Recurrence.isRecurring(event);
-      return `<button class="search-item" data-event-id="${esc(event.id)}"${
-        occurrenceDate ? ` data-occurrence-date="${esc(occurrenceDate)}"` : ''
-      }>
-        <span class="si-dot" style="--color:${calendar.color}"></span>
+  searchResults.innerHTML =
+    header +
+    limited
+      .map(({ event, display, occurrenceDate }) => {
+        const calendar = calendarFor(event);
+        const recurring = Recurrence.isRecurring(event);
+        return `<button class="search-item" data-event-id="${esc(event.id)}"${
+          occurrenceDate ? ` data-occurrence-date="${esc(occurrenceDate)}"` : ''
+        }>
+        <span class="si-dot" style="--color:${eventColor(event)}"></span>
         <span class="si-text">
           <span class="si-title">${recurring ? '<span class="si-repeat" aria-hidden="true">↻</span>' : ''}${esc(
             event.title
@@ -1653,11 +2296,27 @@ function renderSearchResults() {
           }</span>
         </span>
       </button>`;
-    })
-    .join('');
+      })
+      .join('');
 }
 
+searchResults.addEventListener('change', (event) => {
+  if (event.target.id === 'search-from') {
+    searchFrom = event.target.value;
+    renderSearchResults();
+  } else if (event.target.id === 'search-to') {
+    searchTo = event.target.value;
+    renderSearchResults();
+  }
+});
+
 searchResults.addEventListener('click', (event) => {
+  if (event.target.closest('[data-action="clear-search-range"]')) {
+    searchFrom = '';
+    searchTo = '';
+    renderSearchResults();
+    return;
+  }
   const item = event.target.closest('.search-item');
   if (item) openSearchResult(item.dataset.eventId, item.dataset.occurrenceDate);
 });
@@ -1718,6 +2377,7 @@ function repeatSelectValue(recurrence) {
   if (recurrence.freq === 'monthly') {
     return recurrence.interval === 3 ? 'quarterly' : 'monthly';
   }
+  if (recurrence.freq === 'lunar-yearly') return 'lunar';
   return 'yearly';
 }
 
@@ -1774,6 +2434,15 @@ function collectRecurrence(original = null) {
     recurrence = { ...base, freq: 'monthly', interval: 1 };
   } else if (value === 'quarterly') {
     recurrence = { ...base, freq: 'monthly', interval: 3 };
+  } else if (value === 'lunar') {
+    const lunar = window.Almanac?.lunarOf(startDate);
+    recurrence = {
+      ...base,
+      freq: 'lunar-yearly',
+      interval: 1,
+      lunarMonth: lunar?.monthNumber || 1,
+      lunarDay: lunar?.day || 1,
+    };
   } else {
     recurrence = { ...base, freq: 'yearly', interval: 1 };
   }
@@ -1804,7 +2473,7 @@ function updateRepeatUI() {
 }
 
 function setEditingScope(scope) {
-  editingScope = scope === 'series' ? 'series' : 'single';
+  editingScope = ['single', 'following', 'series'].includes(scope) ? scope : 'single';
   $$('.scope-btn', $('#event-scope')).forEach((button) => {
     const active = button.dataset.scope === editingScope;
     button.classList.toggle('active', active);
@@ -1813,7 +2482,11 @@ function setEditingScope(scope) {
   const deleteButton = $('#event-delete');
   if (deleteButton) {
     deleteButton.textContent =
-      editingScope === 'series' ? '删除所有重复日程' : '删除日程';
+      editingScope === 'series'
+        ? '删除所有重复日程'
+        : editingScope === 'following'
+          ? '删除此后日程'
+          : '删除日程';
   }
   // 重复规则属于整个系列，单独编辑某一次时不允许改动
   const lockRepeat = Boolean(editingSeriesRecurrence) && editingScope === 'single';
@@ -1838,6 +2511,140 @@ function populateRepeatControls(recurrence, startDate) {
   setRepeatWeekdays(recurrence && recurrence.freq === 'weekly' ? weekdays : [startDate.getDay()]);
   updateRepeatUI();
 }
+
+const REMINDER_PRESETS = new Set(['5', '15', '30', '60', '1440']);
+
+function reminderSelectValue(reminder) {
+  if (!reminder) return 'none';
+  const value = String(reminder.minutes);
+  return REMINDER_PRESETS.has(value) ? value : 'custom';
+}
+
+function populateReminderControls(reminder) {
+  const select = $('#event-reminder');
+  select.value = reminderSelectValue(reminder);
+  const custom = reminder && !REMINDER_PRESETS.has(String(reminder.minutes));
+  $('#event-reminder-minutes').value = String(custom ? reminder.minutes : 10);
+  $('#event-reminder-system').checked = reminder?.system === true;
+  updateReminderUI();
+}
+
+function updateReminderUI() {
+  const value = $('#event-reminder').value;
+  const enabled = value !== 'none';
+  $('#event-reminder-custom-line').classList.toggle('hidden', value !== 'custom');
+  $('#event-reminder-system-line').classList.toggle('hidden', !enabled);
+}
+
+function collectReminder() {
+  const value = $('#event-reminder').value;
+  if (value === 'none') return null;
+  let minutes;
+  if (value === 'custom') {
+    minutes = Math.round(Number($('#event-reminder-minutes').value));
+    if (!Number.isFinite(minutes) || minutes < 1) minutes = 10;
+    minutes = clamp(minutes, 1, 10080);
+  } else {
+    minutes = Number(value);
+  }
+  return { minutes, system: $('#event-reminder-system').checked };
+}
+
+function renderEventColorSwatches(selected, calendarColor) {
+  const container = $('#event-color-swatches');
+  if (!container) return;
+  const inherited = selected || 'inherit';
+  container.innerHTML = [
+    `<button type="button" class="event-color-swatch inherit ${
+      inherited === 'inherit' ? 'selected' : ''
+    }" data-color="inherit" style="--color:${calendarColor}" title="跟随日历"></button>`,
+    ...CALENDAR_COLORS.map(
+      (color) =>
+        `<button type="button" class="event-color-swatch ${
+          inherited === color ? 'selected' : ''
+        }" data-color="${color}" style="--color:${color}" title="${color}" aria-label="${color}"></button>`
+    ),
+  ].join('');
+}
+
+function selectedEventColor() {
+  return (
+    $('.event-color-swatch.selected', $('#event-color-swatches'))?.dataset.color ||
+    'inherit'
+  );
+}
+
+function updateInheritedColorSwatch() {
+  const swatch = $('.event-color-swatch.inherit', $('#event-color-swatches'));
+  if (!swatch) return;
+  const calendar = calendarById($('#event-calendar').value) || state.calendars[0];
+  swatch.style.setProperty('--color', calendar?.color || '#8E8E93');
+}
+
+function renderAttachments() {
+  const container = $('#event-attachments');
+  if (!container) return;
+  container.innerHTML = editingAttachments
+    .map(
+      (dataUrl, index) =>
+        `<span class="note-attachment"><img src="${dataUrl}" alt="备注图片 ${
+          index + 1
+        }"><button type="button" data-attachment-remove="${index}" aria-label="移除图片">×</button></span>`
+    )
+    .join('');
+}
+
+function addAttachmentFromBlob(blob) {
+  if (!blob || !blob.type.startsWith('image/')) return;
+  if (editingAttachments.length >= 3) {
+    showToast('备注最多添加 3 张图片');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const image = new Image();
+    image.onload = () => {
+      const maxSide = 1000;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      let quality = 0.82;
+      let dataUrl = canvas.toDataURL('image/jpeg', quality);
+      while (dataUrl.length > 380000 && quality > 0.4) {
+        quality -= 0.12;
+        dataUrl = canvas.toDataURL('image/jpeg', quality);
+      }
+      if (dataUrl.length > 400000) {
+        showToast('图片太大，请换一张');
+        return;
+      }
+      editingAttachments.push(dataUrl);
+      renderAttachments();
+    };
+    image.onerror = () => showToast('无法读取这张图片');
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(blob);
+}
+
+$('#event-attachments').addEventListener('click', (event) => {
+  const remove = event.target.closest('[data-attachment-remove]');
+  if (!remove) return;
+  editingAttachments.splice(Number(remove.dataset.attachmentRemove), 1);
+  renderAttachments();
+});
+
+$('#event-notes').addEventListener('paste', (event) => {
+  const items = Array.from(event.clipboardData?.items || []);
+  const imageItem = items.find((item) => item.type.startsWith('image/'));
+  if (!imageItem) return;
+  event.preventDefault();
+  const blob = imageItem.getAsFile();
+  if (blob) addAttachmentFromBlob(blob);
+});
 
 /* ------------------------------------------------------------------ */
 /* 事件编辑器                                                          */
@@ -1881,6 +2688,10 @@ function openEventDialog(options = {}) {
   $('#event-title').value = existing ? existing.title : '';
   $('#event-location').value = existing?.location || '';
   $('#event-notes').value = existing?.notes || '';
+  editingAttachments = Array.isArray(existing?.attachments)
+    ? existing.attachments.slice(0, 3)
+    : [];
+  renderAttachments();
 
   const calendarSelect = $('#event-calendar');
   calendarSelect.innerHTML = state.calendars
@@ -1892,6 +2703,10 @@ function openEventDialog(options = {}) {
     state.calendars[0];
   const selectedCalendarId = existing?.calendarId || fallbackCalendar?.id;
   if (selectedCalendarId) calendarSelect.value = selectedCalendarId;
+  renderEventColorSwatches(
+    existing?.color || null,
+    (calendarById(selectedCalendarId) || fallbackCalendar)?.color || '#8E8E93'
+  );
   updateCalendarDot();
 
   let start;
@@ -1932,6 +2747,8 @@ function openEventDialog(options = {}) {
   updateAllDayState();
 
   populateRepeatControls(editingSeriesRecurrence, start);
+  populateReminderControls(existing?.reminder || null);
+  renderEventTemplatePicker(existing);
   $('#event-scope').classList.toggle('hidden', !series);
   setEditingScope('single');
 
@@ -1958,6 +2775,7 @@ function updateCalendarDot() {
   const select = $('#event-calendar');
   const calendar = calendarById(select.value) || state.calendars[0];
   $('#event-calendar-dot').style.background = calendar?.color || '#8E8E93';
+  updateInheritedColorSwatch();
 }
 
 function updateAllDayState() {
@@ -1967,6 +2785,13 @@ function updateAllDayState() {
 }
 
 $('#event-calendar').addEventListener('change', updateCalendarDot);
+$('#event-color-swatches').addEventListener('click', (event) => {
+  const swatch = event.target.closest('.event-color-swatch');
+  if (!swatch) return;
+  $$('.event-color-swatch', $('#event-color-swatches')).forEach((item) =>
+    item.classList.toggle('selected', item === swatch)
+  );
+});
 $('#event-allday').addEventListener('change', () => {
   const allDay = $('#event-allday').checked;
   if (allDay) {
@@ -2019,12 +2844,137 @@ $('#event-scope').addEventListener('click', (event) => {
   setEditingScope(button.dataset.scope);
 });
 
+$('#event-reminder').addEventListener('change', updateReminderUI);
+$('#event-reminder-minutes').addEventListener('input', () => {
+  const input = $('#event-reminder-minutes');
+  const value = Math.round(Number(input.value));
+  if (Number.isFinite(value) && value > 10080) input.value = '10080';
+});
+
+function renderEventTemplatePicker(existing) {
+  const picker = $('#event-template-picker');
+  const select = $('#event-template-select');
+  if (!picker || !select) return;
+  if (existing) {
+    picker.classList.add('hidden');
+    return;
+  }
+  const templates = state.eventTemplates || [];
+  picker.classList.toggle('hidden', templates.length === 0);
+  select.innerHTML =
+    '<option value="">选择模板…</option>' +
+    templates
+      .map(
+        (template) =>
+          `<option value="${esc(template.id)}">${esc(template.name)}</option>`
+      )
+      .join('');
+  select.value = '';
+}
+
+function applyEventTemplate(template) {
+  if (!template) return;
+  $('#event-title').value = template.title || template.name;
+  if (calendarById(template.calendarId)) {
+    $('#event-calendar').value = template.calendarId;
+  }
+  updateCalendarDot();
+  $('#event-location').value = template.location || '';
+  $('#event-notes').value = template.notes || '';
+  $('#event-allday').checked = template.allDay;
+  if (template.allDay) {
+    const date = $('#event-start-date').value || ymd(new Date());
+    $('#event-end-date').value = date;
+    $('#event-start-time').value = '00:00';
+    $('#event-end-time').value = '23:59';
+  } else {
+    const start = parseLocal(
+      `${$('#event-start-date').value || ymd(new Date())}T${
+        template.startTime || $('#event-start-time').value || '09:00'
+      }`
+    );
+    $('#event-start-time').value = timeValue(start);
+    const end = new Date(start.getTime() + template.duration * 60000);
+    $('#event-end-date').value = ymd(end);
+    $('#event-end-time').value = timeValue(end);
+  }
+  updateAllDayState();
+  populateReminderControls(template.reminder);
+  renderEventColorSwatches(
+    template.color,
+    calendarById($('#event-calendar').value)?.color || '#8E8E93'
+  );
+}
+
+function saveCurrentAsTemplate() {
+  const name = ($('#event-title').value.trim() || '未命名模板').slice(0, 60);
+  const start = parseLocal(
+    `${$('#event-start-date').value || ymd(new Date())}T${
+      $('#event-start-time').value || '09:00'
+    }`
+  );
+  const end = parseLocal(
+    `${$('#event-end-date').value || ymd(new Date())}T${
+      $('#event-end-time').value || '10:00'
+    }`
+  );
+  const allDay = $('#event-allday').checked;
+  const duration = allDay
+    ? 1440
+    : Math.max(15, Math.round((end - start) / 60000) || 60);
+  const template = {
+    id: '',
+    name,
+    title: $('#event-title').value.trim(),
+    calendarId: $('#event-calendar').value,
+    allDay,
+    duration,
+    startTime: $('#event-start-time').value || '09:00',
+    location: $('#event-location').value.trim(),
+    notes: $('#event-notes').value.trim(),
+    reminder: collectReminder(),
+    color: selectedEventColor() === 'inherit' ? null : selectedEventColor(),
+  };
+  state.eventTemplates = state.eventTemplates || [];
+  const existing = state.eventTemplates.find((item) => item.name === name);
+  if (existing) Object.assign(existing, template, { id: existing.id });
+  else state.eventTemplates.push({ ...template, id: makeId('template') });
+  if (state.eventTemplates.length > 30) state.eventTemplates.shift();
+  saveState();
+  showToast(`已保存模板「${name}」`);
+  renderEventTemplatePicker(
+    editingEventId ? state.events.find((event) => event.id === editingEventId) : null
+  );
+}
+
+$('#event-template-select')?.addEventListener('change', (event) => {
+  const template = (state.eventTemplates || []).find(
+    (item) => item.id === event.target.value
+  );
+  if (template) applyEventTemplate(template);
+});
+
+$('#event-template-save')?.addEventListener('click', saveCurrentAsTemplate);
+
+$('#event-template-delete')?.addEventListener('click', () => {
+  const id = $('#event-template-select').value;
+  if (!id) {
+    showToast('先选择一个模板');
+    return;
+  }
+  state.eventTemplates = (state.eventTemplates || []).filter((item) => item.id !== id);
+  saveState();
+  renderEventTemplatePicker(null);
+  showToast('已删除模板');
+});
+
 function closeEventDialog() {
   eventOverlay.classList.add('hidden');
   editingEventId = null;
   editingOccurrenceDate = null;
   editingScope = 'single';
   editingSeriesRecurrence = null;
+  editingAttachments = [];
 }
 
 function saveEvent() {
@@ -2066,6 +3016,9 @@ function saveEvent() {
     allDay,
     location: $('#event-location').value.trim(),
     notes: $('#event-notes').value.trim(),
+    reminder: collectReminder(),
+    color: selectedEventColor() === 'inherit' ? null : selectedEventColor(),
+    attachments: editingAttachments.slice(0, 3),
   };
 
   const repeatValue = $('#event-repeat').value;
@@ -2107,6 +3060,7 @@ function saveEvent() {
     }
 
     // 只改这一次：拆出独立日程，并把原实例标记为例外
+    recordHistory('单独修改重复日程');
     state.events.push({ id: makeId('ev'), ...payload, recurrence: null });
     const key = editingOccurrenceDate || ymd(parseLocal(payload.start));
     const seriesRecurrence = Recurrence.normalize(series.recurrence);
@@ -2119,6 +3073,37 @@ function saveEvent() {
     closeEventDialog();
     render();
     showToast('已单独修改此日程');
+    return;
+  }
+
+  if (series && editingScope === 'following') {
+    // 改此后全部：截断旧系列，从这一次开始建立新系列
+    const key = editingOccurrenceDate || ymd(parseLocal(payload.start));
+    const occurrenceDay = startOfDay(parseLocal(key));
+    const previousKey = ymd(addDays(occurrenceDay, -1));
+    const seriesStartKey = series.start.slice(0, 10);
+    const seriesRecurrence = Recurrence.normalize(series.recurrence);
+    const pastExceptions = seriesRecurrence.exceptions.filter((date) => date < key);
+    const futureExceptions = seriesRecurrence.exceptions.filter((date) => date >= key);
+    const newEvent = {
+      id: makeId('ev'),
+      ...payload,
+      recurrence: recurrence ? { ...recurrence, exceptions: futureExceptions } : null,
+    };
+    recordHistory('修改此后日程');
+    if (previousKey < seriesStartKey) {
+      state.events = state.events.filter((event) => event.id !== series.id);
+    } else {
+      seriesRecurrence.exceptions = pastExceptions;
+      seriesRecurrence.until = previousKey;
+      series.recurrence = seriesRecurrence;
+    }
+    state.events.push(newEvent);
+    state.events.sort(compareEvents);
+    saveState();
+    closeEventDialog();
+    render();
+    showToast('已修改此后所有日程');
     return;
   }
 
@@ -2135,12 +3120,16 @@ function saveEvent() {
     newAnchor.setHours(formStart.getHours(), formStart.getMinutes(), 0, 0);
     const newEnd = new Date(newAnchor.getTime() + (formEnd - formStart));
 
+    recordHistory('修改所有重复日程');
     Object.assign(series, {
       calendarId,
       title,
       allDay,
       location: payload.location,
       notes: payload.notes,
+      reminder: payload.reminder,
+      color: payload.color,
+      attachments: payload.attachments,
       start: formatLocal(newAnchor),
       end: formatLocal(newEnd),
       recurrence,
@@ -2154,8 +3143,10 @@ function saveEvent() {
   }
 
   if (existing) {
+    recordHistory('修改日程');
     Object.assign(existing, payload, { recurrence });
   } else {
+    recordHistory('新建日程');
     state.events.push({ id: makeId('ev'), ...payload, recurrence });
   }
 
@@ -2172,6 +3163,13 @@ function deleteEditingEvent() {
 
   if (series && editingScope === 'single') {
     const key = editingOccurrenceDate || ymd(parseLocal(series.start));
+    recordHistory('删除单次重复日程');
+    addTrashEntry({
+      kind: 'occurrence',
+      title: series.title,
+      item: null,
+      meta: { eventId: series.id, occurrenceDate: key },
+    });
     const seriesRecurrence = Recurrence.normalize(series.recurrence);
     if (!seriesRecurrence.exceptions.includes(key)) {
       seriesRecurrence.exceptions.push(key);
@@ -2180,7 +3178,43 @@ function deleteEditingEvent() {
     saveState();
     closeEventDialog();
     render();
-    showToast('已删除此日程');
+    showToast('已删除此日程，可在回收站恢复');
+    return;
+  }
+
+  if (series && editingScope === 'following') {
+    const key = editingOccurrenceDate || ymd(parseLocal(series.start));
+    const previousKey = ymd(addDays(startOfDay(parseLocal(key)), -1));
+    const seriesStartKey = series.start.slice(0, 10);
+    const seriesId = series.id;
+    const seriesTitle = series.title;
+    closeEventDialog();
+    openConfirm({
+      title: '删除此后日程？',
+      text: `将删除「${seriesTitle}」从 ${key} 起的全部实例，之前的历史会保留。可在回收站恢复。`,
+      okLabel: '删除此后',
+      onConfirm: () => {
+        recordHistory('删除此后日程');
+        if (previousKey < seriesStartKey) {
+          moveEventToTrash(series);
+          state.events = state.events.filter((event) => event.id !== seriesId);
+        } else {
+          const snapshot = JSON.parse(JSON.stringify(series));
+          addTrashEntry({
+            kind: 'series-split',
+            title: seriesTitle,
+            item: snapshot,
+            meta: { seriesId },
+          });
+          const seriesRecurrence = Recurrence.normalize(series.recurrence);
+          seriesRecurrence.until = previousKey;
+          series.recurrence = seriesRecurrence;
+        }
+        saveState();
+        render();
+        showToast('已删除此后日程，可在回收站恢复');
+      },
+    });
     return;
   }
 
@@ -2190,23 +3224,27 @@ function deleteEditingEvent() {
     closeEventDialog();
     openConfirm({
       title: '删除所有重复日程？',
-      text: `将删除「${seriesTitle}」及其全部重复实例，此操作无法撤销。`,
+      text: `将删除「${seriesTitle}」及其全部重复实例。可以在回收站恢复。`,
       okLabel: '全部删除',
       onConfirm: () => {
+        recordHistory('删除重复日程');
+        moveEventToTrash(series);
         state.events = state.events.filter((event) => event.id !== seriesId);
         saveState();
         render();
-        showToast('已删除重复日程');
+        showToast('已删除重复日程，可在回收站恢复');
       },
     });
     return;
   }
 
+  recordHistory('删除日程');
+  moveEventToTrash(existing || { id: editingEventId, title: '日程' });
   state.events = state.events.filter((event) => event.id !== editingEventId);
   saveState();
   closeEventDialog();
   render();
-  showToast('已删除日程');
+  showToast('已删除日程，可在回收站恢复');
 }
 
 /* ------------------------------------------------------------------ */
@@ -2269,6 +3307,8 @@ function saveCalendar() {
   const color =
     $('.swatch.selected', $('#calendar-swatches'))?.dataset.color || CALENDAR_COLORS[0];
 
+  recordHistory(calendarDialogMode === 'rename' ? '重命名日历' : '新建日历');
+
   if (calendarDialogMode === 'rename' && editingCalendarId) {
     const calendar = calendarById(editingCalendarId);
     if (calendar) {
@@ -2304,11 +3344,15 @@ function requestCalendarDelete(calendar) {
   const planCount = state.plans.filter((plan) => plan.calendarId === calendar.id).length;
   openConfirm({
     title: `删除“${calendar.name}”？`,
-    text: `${eventCount > 0 ? `该日历中的 ${eventCount} 个日程会被删除。` : ''}${
+    text: `${eventCount > 0 ? `该日历中的 ${eventCount} 个日程会移入回收站。` : ''}${
       planCount > 0 ? ` ${planCount} 个计划会移至其它日历。` : ''
-    }此操作无法撤销。`,
+    }日程可以在回收站恢复。`,
     okLabel: '删除',
     onConfirm: () => {
+      recordHistory('删除日历');
+      for (const event of state.events.filter((item) => item.calendarId === calendar.id)) {
+        moveEventToTrash(event);
+      }
       state.calendars = state.calendars.filter((item) => item.id !== calendar.id);
       state.events = state.events.filter((event) => event.calendarId !== calendar.id);
       const fallback = state.calendars[0]?.id;
@@ -2417,9 +3461,14 @@ function renderWidgetGallery() {
           <h3 class="wg-name">${info.name}</h3>
           <p class="wg-meta">${info.size}${count > 0 ? ` · 已添加 ${count} 个` : ''}</p>
           <p class="wg-desc">${info.description}</p>
-          <button class="wg-toggle ${count > 0 ? 'added' : ''}" data-action="toggle-widget" data-type="${type}">
-            ${count > 0 ? '已添加 · 移除' : '添加到桌面'}
+          <button class="wg-toggle" data-action="add-widget" data-type="${type}">
+            ${count > 0 ? '再添加一个' : '添加到桌面'}
           </button>
+          ${
+            count > 0
+              ? `<button class="wg-remove" data-action="remove-widgets" data-type="${type}">移除全部 (${count})</button>`
+              : ''
+          }
         </div>
       </article>`;
     })
@@ -2427,18 +3476,24 @@ function renderWidgetGallery() {
 }
 
 $('#widget-gallery').addEventListener('click', async (event) => {
-  const button = event.target.closest('[data-action="toggle-widget"]');
+  const button = event.target.closest('[data-action]');
   if (!button) return;
+  const action = button.dataset.action;
+  if (action !== 'add-widget' && action !== 'remove-widgets') return;
   const type = button.dataset.type;
   const existing = galleryWidgets.filter((widget) => widget.type === type);
   button.disabled = true;
   try {
-    if (existing.length > 0) {
+    if (action === 'remove-widgets') {
       for (const widget of existing) await window.desktop.widgets.remove(widget.id);
-      showToast(`已移除「${WIDGET_INFO[type].name}」小组件`);
+      showToast(`已移除 ${existing.length} 个「${WIDGET_INFO[type].name}」小组件`);
     } else {
-      await window.desktop.widgets.add(type);
-      showToast(`已添加「${WIDGET_INFO[type].name}」小组件`);
+      const added = await window.desktop.widgets.add(type);
+      showToast(
+        added
+          ? `已添加「${WIDGET_INFO[type].name}」小组件`
+          : '最多同时显示 10 个小组件'
+      );
     }
   } catch {
     showToast('操作失败，请重试');
@@ -2490,7 +3545,7 @@ function previewToday() {
             .map((event) => {
               const calendar = calendarFor(event);
               const time = event.allDay ? '全天' : formatTime(parseLocal(event.start));
-              return `<div class="wgp-line"><i style="--color:${calendar.color}"></i><span class="wgp-line-time">${time}</span><span class="wgp-line-title">${esc(event.title)}</span></div>`;
+              return `<div class="wgp-line"><i style="--color:${eventColor(event)}"></i><span class="wgp-line-time">${time}</span><span class="wgp-line-title">${esc(event.title)}</span></div>`;
             })
             .join('')
         : '<div class="wgp-empty">今天没有日程</div>'
@@ -2506,7 +3561,7 @@ function previewUpcoming() {
       const time = event.allDay ? '全天' : formatTime(start);
       return `<div class="wgp-up-row">
         <div class="wgp-up-date"><b>${start.getDate()}</b><span>${start.getMonth() + 1}月</span></div>
-        <div class="wgp-up-line"><i style="--color:${calendar.color}"></i>${esc(event.title)}</div>
+        <div class="wgp-up-line"><i style="--color:${eventColor(event)}"></i>${esc(event.title)}</div>
         <div class="wgp-up-time">${time}</div>
       </div>`;
     })
@@ -2527,7 +3582,7 @@ function previewMonthAgenda() {
           ? events
               .map((event) => {
                 const calendar = calendarFor(event);
-                return `<div class="wgp-event"><i style="--color:${calendar.color}"></i><span>${esc(event.title)}</span></div>`;
+                return `<div class="wgp-event"><i style="--color:${eventColor(event)}"></i><span>${esc(event.title)}</span></div>`;
               })
               .join('')
           : '<div class="wgp-empty">今天没有日程</div>'
@@ -2581,6 +3636,8 @@ function closeAllPopups() {
   closeConfirmDialog();
   closeWidgetGallery();
   reminderOverlay.classList.add('hidden');
+  if (icsOverlay) icsOverlay.classList.add('hidden');
+  $('#task-overlay')?.classList.add('hidden');
   if (window.SettingsUI?.isOpen()) SettingsUI.close();
   if (window.Plans?.isOpen()) Plans.closeEditor();
   hideContextMenu();
@@ -2639,6 +3696,9 @@ appMenu.addEventListener('click', (event) => {
 
   if (action === 'new-plan') openPlanEditor(null);
   else if (action === 'new-event') openEventDialog({});
+  else if (action === 'ics') openIcsDialog();
+  else if (action === 'print-view') window.print();
+  else if (action === 'capture-view') captureCurrentView();
   else if (action === 'export-config') exportConfiguration();
   else if (action === 'import-config') importConfiguration();
   else if (action === 'open-settings') openSettings('general');
@@ -2646,6 +3706,180 @@ appMenu.addEventListener('click', (event) => {
   else if (action === 'open-data') openDataFolder();
   else if (action === 'quit-app') window.desktop.quitApp();
 });
+
+function openIcsDialog() {
+  closeAllPopups();
+  const options = state.calendars
+    .map((calendar) => `<option value="${esc(calendar.id)}">${esc(calendar.name)}</option>`)
+    .join('');
+  const importSelect = $('#ics-import-calendar');
+  const exportSelect = $('#ics-export-calendar');
+  importSelect.innerHTML = options;
+  exportSelect.innerHTML = `<option value="all">全部日历</option>${options}`;
+  importSelect.value =
+    state.settings.defaultCalendarId || state.calendars[0]?.id || '';
+  exportSelect.value = 'all';
+  icsOverlay.classList.remove('hidden');
+}
+
+function closeIcsDialog() {
+  icsOverlay.classList.add('hidden');
+}
+
+async function importIcsFile() {
+  let result;
+  try {
+    result = await window.desktop.ics.importFile();
+  } catch {
+    showToast('导入失败，请重试');
+    return;
+  }
+  if (!result || result.canceled) return;
+  if (!result.ok) {
+    showToast(result.error || '无法读取 iCalendar 文件');
+    return;
+  }
+  const imported = importIcsText(result.text, $('#ics-import-calendar').value);
+  if (imported === 0) {
+    showToast('没有新增日程（可能已导入过，或文件为空）');
+    return;
+  }
+  closeIcsDialog();
+  showToast(`已导入 ${imported} 个日程`);
+}
+
+function importIcsText(text, calendarId) {
+  let parsed;
+  try {
+    parsed = Ics.parse(text);
+  } catch {
+    return 0;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return 0;
+  const targetCalendar =
+    state.calendars.find((calendar) => calendar.id === calendarId)?.id ||
+    state.calendars[0]?.id;
+  if (!targetCalendar) return 0;
+  const existingUids = new Set(
+    state.events.map((event) => event.uid).filter(Boolean)
+  );
+  recordHistory('导入 iCalendar');
+  let added = 0;
+  for (const item of parsed) {
+    if (item.uid && existingUids.has(item.uid)) continue;
+    state.events.push({
+      id: makeId('ev'),
+      calendarId: targetCalendar,
+      title: item.title,
+      start: item.start,
+      end: item.end,
+      allDay: item.allDay,
+      location: item.location,
+      notes: item.notes,
+      recurrence: Recurrence.normalize(item.recurrence),
+      reminder: null,
+      uid: item.uid || '',
+    });
+    if (item.uid) existingUids.add(item.uid);
+    added += 1;
+    if (added >= 5000) break;
+  }
+  if (added === 0) {
+    historyPast.pop();
+    return 0;
+  }
+  state.events.sort(compareEvents);
+  saveState();
+  render();
+  return added;
+}
+
+function buildIcsExport(options = {}) {
+  const calendarId = options.calendarId || 'all';
+  const startKey = options.start || '';
+  const endKey = options.end || '';
+  if ((startKey && !endKey) || (!startKey && endKey)) {
+    throw new Error('请同时选择开始和结束日期');
+  }
+  let events = state.events.filter(
+    (event) => calendarId === 'all' || event.calendarId === calendarId
+  );
+  if (startKey && endKey) {
+    if (endKey < startKey) throw new Error('结束日期不能早于开始日期');
+    const rangeStart = startOfDay(parseLocal(startKey));
+    const rangeEnd = addDays(startOfDay(parseLocal(endKey)), 1);
+    const expanded = [];
+    for (const event of events) {
+      if (!Recurrence.isRecurring(event)) {
+        const start = parseLocal(event.start);
+        const end = parseLocal(event.end);
+        if (end > rangeStart && start < rangeEnd) expanded.push(event);
+        continue;
+      }
+      for (const occurrence of Recurrence.expand(event, rangeStart, rangeEnd)) {
+        expanded.push(withOccurrence(event, occurrence));
+      }
+    }
+    events = expanded;
+  }
+  return Ics.build(events);
+}
+
+async function exportIcsFile() {
+  const text = buildIcsExport({
+    calendarId: $('#ics-export-calendar').value,
+    start: $('#ics-export-start').value,
+    end: $('#ics-export-end').value,
+  });
+  if (!text || !text.includes('BEGIN:VEVENT')) {
+    showToast('这个范围内没有可导出的日程');
+    return;
+  }
+  const result = await window.desktop.ics.exportFile({
+    text,
+    defaultName: `朝暮日历-${ymd(new Date()).replace(/-/g, '')}.ics`,
+  });
+  if (!result || result.canceled) return;
+  if (!result.ok) {
+    showToast(result.error || '导出失败');
+    return;
+  }
+  closeIcsDialog();
+  showToast('已导出 iCalendar 文件');
+}
+
+$('#ics-cancel').addEventListener('click', closeIcsDialog);
+$('#ics-import-btn').addEventListener('click', importIcsFile);
+$('#ics-export-btn').addEventListener('click', () => {
+  exportIcsFile().catch((error) => showToast(error.message || '导出失败'));
+});
+icsOverlay.addEventListener('mousedown', (event) => {
+  if (event.target === icsOverlay) closeIcsDialog();
+});
+
+async function captureCurrentView() {
+  const rect = mainView.getBoundingClientRect();
+  if (rect.width < 10 || rect.height < 10) return;
+  let result;
+  try {
+    result = await window.desktop.view.capture({
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      defaultName: `朝暮-${ymd(cursor)}.png`,
+    });
+  } catch {
+    showToast('导出图片失败');
+    return;
+  }
+  if (!result || result.canceled) return;
+  if (!result.ok) {
+    showToast(result.error || '导出图片失败');
+    return;
+  }
+  showToast('当前视图已导出为图片');
+}
 
 async function exportConfiguration() {
   try {
@@ -2661,8 +3895,50 @@ async function exportConfiguration() {
   }
 }
 
-async function importConfiguration() {
+function applyHolidayData(raw) {
+  const parsed = Holidays.parse(raw);
+  const count = Object.keys(parsed).length;
+  if (count === 0) return 0;
+  recordHistory('导入节假日数据');
+  state.settings.holidayData = parsed;
+  Holidays.setCustom(parsed);
+  saveState();
+  render();
+  return count;
+}
+
+async function importHolidays() {
   let result;
+  try {
+    result = await window.desktop.holidays.importFile();
+  } catch {
+    showToast('导入失败，请重试');
+    return;
+  }
+  if (!result || result.canceled) return;
+  if (!result.ok) {
+    showToast(result.error || '无法读取节假日文件');
+    return;
+  }
+  const parsed = Holidays.parse(result.data);
+  const count = Object.keys(parsed).length;
+  if (count === 0) {
+    showToast('没有识别到有效节假日数据');
+    return;
+  }
+  const fileName = result.filePath ? result.filePath.split(/[\\/]/).pop() : '节假日文件';
+  openConfirm({
+    title: '导入节假日数据？',
+    text: `将从「${fileName}」导入 ${count} 天数据，覆盖当前自定义节假日（内置 2024–2026 仍保留）。`,
+    okLabel: '导入',
+    onConfirm: () => {
+      applyHolidayData(result.data);
+      showToast(`已导入 ${count} 天节假日数据`);
+    },
+  });
+}
+
+async function importConfiguration() {  let result;
   try {
     result = await window.desktop.config.importFile();
   } catch {
@@ -2686,7 +3962,17 @@ async function importConfiguration() {
     return;
   }
 
-  const importedState = normalizeState(raw);
+  let importedState;
+  try {
+    importedState = normalizeState(raw);
+  } catch {
+    showToast('配置文件部分损坏，已尽量读取可用数据');
+    importedState = normalizeState({
+      calendars: raw.calendars,
+      events: Array.isArray(raw.events) ? raw.events : [],
+      plans: Array.isArray(raw.plans) ? raw.plans : [],
+    });
+  }
   const widgets = Array.isArray(result.payload.widgets) ? result.payload.widgets : null;
   const widgetCount = widgets
     ? widgets.filter((widget) => widget && WIDGET_INFO[widget.type]).length
@@ -2701,6 +3987,8 @@ async function importConfiguration() {
     okLabel: '导入',
     onConfirm: async () => {
       closeAllPopups();
+      historyPast = [];
+      historyFuture = [];
       state = importedState;
       view = ['month', 'week', 'day', 'year'].includes(state.settings.lastView)
         ? state.settings.lastView
@@ -2738,6 +4026,25 @@ async function openDataFolder() {
 /* ------------------------------------------------------------------ */
 /* 键盘快捷键                                                          */
 /* ------------------------------------------------------------------ */
+
+function shortcutFor(action) {
+  const value = state.settings.shortcuts?.[action];
+  return String(value || DEFAULT_SHORTCUTS[action] || '');
+}
+
+function matchesShortcut(event, action) {
+  const value = shortcutFor(action);
+  if (!value) return false;
+  if (value.length === 1) {
+    return (
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === value.toLowerCase()
+    );
+  }
+  return event.key === value;
+}
 
 document.addEventListener('keydown', (event) => {
   const inField = event.target.matches('input, textarea, select');
@@ -2794,36 +4101,60 @@ document.addEventListener('keydown', (event) => {
   }
 
   if (inField) return;
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+    event.preventDefault();
+    redo();
+    return;
+  }
+
   if (event.key === '/') {
     event.preventDefault();
     focusSearch();
     return;
   }
+
+  if (event.altKey && event.key === 'ArrowLeft') {
+    event.preventDefault();
+    navigateBack();
+    return;
+  }
+  if (event.altKey && event.key === 'ArrowRight') {
+    event.preventDefault();
+    navigateForward();
+    return;
+  }
   if (event.ctrlKey || event.metaKey || event.altKey) return;
 
-  const key = event.key.toLowerCase();
-  if (key === 't') {
+  if (matchesShortcut(event, 'today')) {
     event.preventDefault();
     goToday();
-  } else if (key === 'd') {
+  } else if (matchesShortcut(event, 'day')) {
     event.preventDefault();
     switchView('day');
-  } else if (key === 'w') {
+  } else if (matchesShortcut(event, 'week')) {
     event.preventDefault();
     switchView('week');
-  } else if (key === 'm') {
+  } else if (matchesShortcut(event, 'month')) {
     event.preventDefault();
     switchView('month');
-  } else if (key === 'y') {
+  } else if (matchesShortcut(event, 'year')) {
     event.preventDefault();
     switchView('year');
-  } else if (key === 'p') {
+  } else if (matchesShortcut(event, 'newPlan')) {
     event.preventDefault();
     openPlanEditor(null);
-  } else if (event.key === 'ArrowLeft') {
+  } else if (matchesShortcut(event, 'prev')) {
     event.preventDefault();
     navigate(-1);
-  } else if (event.key === 'ArrowRight') {
+  } else if (matchesShortcut(event, 'next')) {
     event.preventDefault();
     navigate(1);
   }
@@ -2967,6 +4298,149 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* 日程提醒                                                            */
+/* ------------------------------------------------------------------ */
+
+const eventReminderQueue = [];
+let activeEventReminder = null;
+let eventReminderRetry = null;
+
+function reminderAtFor(event, occurrence) {
+  const start = parseLocal(occurrence.start);
+  if (Number.isNaN(start.getTime())) return null;
+  if (event.allDay) start.setHours(9, 0, 0, 0);
+  return new Date(start.getTime() - event.reminder.minutes * 60000);
+}
+
+function collectUpcomingReminders(now = new Date(), horizonDays = 7) {
+  const list = [];
+  const horizon = new Date(now.getTime() + horizonDays * 86400000);
+  const rangeStart = new Date(now.getTime() - 120000);
+  for (const event of state.events) {
+    if (!event.reminder || !isEventVisible(event)) continue;
+    for (const occurrence of Recurrence.expand(event, rangeStart, horizon)) {
+      const at = reminderAtFor(event, occurrence);
+      if (!at || at < rangeStart || at > horizon) continue;
+      const calendar = calendarFor(event);
+      const start = parseLocal(occurrence.start);
+      const end = parseLocal(occurrence.end);
+      const timeLabel = event.allDay
+        ? '全天'
+        : `${formatTime(start)} – ${formatTime(end)}`;
+      list.push({
+        key: `${event.id}:${occurrence.occurrenceDate}:${at.getTime()}`,
+        eventId: event.id,
+        occurrenceDate: occurrence.occurrenceDate,
+        title: event.title,
+        body: `${formatMonthDay(start)} ${timeLabel}${
+          event.location ? ` · ${event.location}` : ''
+        }`,
+        at: at.toISOString(),
+        system: event.reminder.system === true,
+        calendar: calendar.name,
+        allDay: Boolean(event.allDay),
+      });
+      if (list.length >= 200) break;
+    }
+    if (list.length >= 200) break;
+  }
+  return list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+function syncReminders() {
+  if (!window.desktop?.reminders) return;
+  window.desktop.reminders.sync(collectUpcomingReminders()).catch(() => {});
+}
+
+function showNextEventReminder(force = false) {
+  if (!eventReminderOverlay || !eventReminderOverlay.classList.contains('hidden')) return;
+  if (activeEventReminder) return;
+  if (eventReminderQueue.length === 0) return;
+  const busy = $$('.overlay').some(
+    (overlay) => overlay !== eventReminderOverlay && !overlay.classList.contains('hidden')
+  );
+  if (busy && !force) {
+    clearTimeout(eventReminderRetry);
+    eventReminderRetry = setTimeout(() => showNextEventReminder(false), 2200);
+    return;
+  }
+  const reminder = eventReminderQueue.shift();
+  activeEventReminder = reminder;
+  const at = new Date(reminder.at);
+  const valid = !Number.isNaN(at.getTime());
+  $('#event-reminder-time').textContent = valid
+    ? `${at.getMonth() + 1}月${at.getDate()}日 ${pad(at.getHours())}:${pad(at.getMinutes())}`
+    : '';
+  $('#event-reminder-title').textContent = reminder.title || '日程提醒';
+  $('#event-reminder-meta').textContent = [reminder.calendar, reminder.body]
+    .filter(Boolean)
+    .join(' · ');
+  eventReminderOverlay.classList.remove('hidden');
+}
+
+function closeEventReminder() {
+  eventReminderOverlay.classList.add('hidden');
+  activeEventReminder = null;
+  setTimeout(() => showNextEventReminder(false), 240);
+}
+
+function enqueueEventReminder(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  eventReminderQueue.push(payload);
+  showNextEventReminder(false);
+}
+
+function snoozeEventReminder() {
+  const reminder = activeEventReminder;
+  if (!reminder) return;
+  const next = {
+    ...reminder,
+    key: `${reminder.key || reminder.eventId}:snooze:${Date.now()}`,
+    at: new Date(Date.now() + 5 * 60000).toISOString(),
+  };
+  closeEventReminder();
+  setTimeout(() => enqueueEventReminder(next), 5 * 60000);
+  showToast('5 分钟后再次提醒');
+}
+
+function openActiveEventReminder() {
+  const reminder = activeEventReminder;
+  if (!reminder) return;
+  const event = state.events.find((item) => item.id === reminder.eventId);
+  closeEventReminder();
+  if (!event) {
+    showToast('这个日程已经被删除');
+    return;
+  }
+  captureTimeScroll();
+  cursor = startOfDay(parseLocal(reminder.occurrenceDate || event.start));
+  if (view === 'year') view = 'month';
+  render();
+  openEventDialog({ eventId: event.id, occurrenceDate: reminder.occurrenceDate });
+}
+
+$('#event-reminder-dismiss').addEventListener('click', closeEventReminder);
+$('#event-reminder-snooze').addEventListener('click', snoozeEventReminder);
+$('#event-reminder-open').addEventListener('click', openActiveEventReminder);
+eventReminderOverlay.addEventListener('mousedown', (event) => {
+  if (event.target === eventReminderOverlay) closeEventReminder();
+});
+document.addEventListener('keydown', (event) => {
+  if (
+    event.key === 'Escape' &&
+    eventReminderOverlay &&
+    !eventReminderOverlay.classList.contains('hidden')
+  ) {
+    event.preventDefault();
+    closeEventReminder();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) showNextEventReminder(false);
+});
+window.desktop.reminders.onFire(enqueueEventReminder);
+
 window.__app = {
   getState: () => state,
   saveState,
@@ -2989,6 +4463,7 @@ async function init() {
   view = state.settings.lastView;
   cursor = startOfDay(new Date());
   sidebarVisible = state.settings.sidebarVisible !== false;
+  Holidays.setCustom(state.settings.holidayData);
   applySidebarState();
   Appearance.apply(state.settings);
 
@@ -2998,6 +4473,14 @@ async function init() {
     render,
     showToast,
     openConfirm,
+    recordHistory,
+    movePlanToTrash: (plan) =>
+      addTrashEntry({
+        kind: 'plan',
+        title: plan.title,
+        item: JSON.parse(JSON.stringify(plan)),
+        meta: {},
+      }),
   });
 
   SettingsUI.init({
@@ -3010,6 +4493,9 @@ async function init() {
     openPlanEditor,
     openExternal: (url) => window.desktop.openExternal(url),
     showToast,
+    recordHistory,
+    openConfirm,
+    importHolidays,
   });
 
   const planCalendar = $('#plan-calendar');
@@ -3022,7 +4508,7 @@ async function init() {
 
   render();
   window.desktop.rendererReady();
-
+  syncReminders();
   clearInterval(clockTimer);
   clockTimer = setInterval(() => {
     const nowKey = ymd(new Date());
@@ -3035,6 +4521,8 @@ async function init() {
       updateNowLine();
     }
   }, 30000);
+
+  setInterval(syncReminders, 5 * 60000);
 
   setTimeout(() => {
     if (!reminderShown) {
@@ -3080,6 +4568,67 @@ window.__calendarTest = {
   },
   dismissReminders() {
     dismissPlanReminders();
+  },
+  collectReminders() {
+    return collectUpcomingReminders();
+  },
+  fireEventReminder(payload) {
+    enqueueEventReminder(payload);
+    return !eventReminderOverlay.classList.contains('hidden');
+  },
+  syncReminders() {
+    syncReminders();
+  },
+  importHolidayData(raw) {
+    return applyHolidayData(raw);
+  },
+  parseIcs(text) {
+    return Ics.parse(text);
+  },
+  buildIcs(options) {
+    return buildIcsExport(options);
+  },
+  importIcs(text, calendarId) {
+    return importIcsText(text, calendarId);
+  },
+  undo() {
+    undo();
+    return { past: historyPast.length, future: historyFuture.length };
+  },
+  redo() {
+    redo();
+    return { past: historyPast.length, future: historyFuture.length };
+  },
+  historyState() {
+    return { past: historyPast.length, future: historyFuture.length };
+  },
+  goBack() {
+    navigateBack();
+    return { view, cursor: ymd(cursor), past: navPast.length, future: navFuture.length };
+  },
+  goForward() {
+    navigateForward();
+    return { view, cursor: ymd(cursor), past: navPast.length, future: navFuture.length };
+  },
+  navHistory() {
+    return {
+      past: navPast.slice(),
+      future: navFuture.slice(),
+      view,
+      cursor: ymd(cursor),
+    };
+  },
+  trashState() {
+    return JSON.parse(JSON.stringify(state.trash || []));
+  },
+  tasksState() {
+    return JSON.parse(JSON.stringify(state.tasks || []));
+  },
+  addTask(title, due) {
+    return addTask(title, due);
+  },
+  openTasks() {
+    openTaskOverlay();
   },
   stats() {
     return {

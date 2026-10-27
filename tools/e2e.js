@@ -522,7 +522,7 @@ async function main() {
     await mainClient.evaluate("document.querySelector('#widgets-btn').click()");
     await sleep(400);
     await mainClient.evaluate(
-      "document.querySelector('.wg-toggle[data-type=\"month\"]').click()"
+      "document.querySelector('.wg-remove[data-type=\"month\"]').click()"
     );
     await sleep(900);
     const afterRemoval = JSON.parse(fs.readFileSync(widgetStorePath, 'utf8'));

@@ -13,7 +13,7 @@
  */
 
 (function () {
-  const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'];
+  const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly', 'lunar-yearly'];
   const MAX_EXCEPTIONS = 2000;
   const MAX_ITERATIONS = 20000;
   const MAX_RESULTS = 4000;
@@ -88,6 +88,15 @@
 
     const until = parseYmd(input.until) ? input.until : null;
 
+    const lunarMonth =
+      freq === 'lunar-yearly'
+        ? Math.min(12, Math.max(1, Math.round(Number(input.lunarMonth) || 1)))
+        : null;
+    const lunarDay =
+      freq === 'lunar-yearly'
+        ? Math.min(30, Math.max(1, Math.round(Number(input.lunarDay) || 1)))
+        : null;
+
     const exceptions = [];
     const seenExceptions = new Set();
     for (const value of Array.isArray(input.exceptions) ? input.exceptions : []) {
@@ -97,7 +106,7 @@
       if (exceptions.length >= MAX_EXCEPTIONS) break;
     }
 
-    return { freq, interval, weekdays, until, exceptions };
+    return { freq, interval, weekdays, until, exceptions, lunarMonth, lunarDay };
   }
 
   function isRecurring(event) {
@@ -226,6 +235,29 @@
           if (day >= baseDay && consider(day) === false) break;
         }
       }
+    } else if (rec.freq === 'lunar-yearly') {
+      if (!window.Almanac?.solarForLunar) return [];
+      const baseLunar = window.Almanac.lunarOf(baseDay);
+      const baseYear = baseLunar?.year || baseDay.getFullYear();
+      const month = rec.lunarMonth || (baseLunar?.monthNumber || 1);
+      const dayOfMonth = rec.lunarDay || (baseLunar?.day || 1);
+      const isLeap = Boolean(baseLunar?.isLeap);
+      const lastYear = rangeEnd.getFullYear() + 1;
+      for (let offset = 0; offset < 400; offset += 1) {
+        const lunarYear = baseYear + offset * rec.interval;
+        if (lunarYear > lastYear) break;
+        const solar = window.Almanac.solarForLunar(
+          lunarYear,
+          month,
+          dayOfMonth,
+          isLeap
+        );
+        if (!solar) continue;
+        const day = startOfDay(solar);
+        if (day < baseDay) continue;
+        if (untilDay && day > untilDay) break;
+        if (consider(day) === false) break;
+      }
     }
 
     return results;
@@ -263,6 +295,8 @@
       }
     } else if (rec.freq === 'monthly') {
       text = rec.interval === 1 ? '每月' : `每 ${rec.interval} 个月`;
+    } else if (rec.freq === 'lunar-yearly') {
+      text = `每年农历${rec.lunarMonth}月${rec.lunarDay}日`;
     } else {
       text = rec.interval === 1 ? '每年' : `每 ${rec.interval} 年`;
     }

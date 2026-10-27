@@ -105,11 +105,15 @@
   function active(plans) {
     const today = ymd(startOfDay(new Date()));
     return plans
-      .filter((plan) => plan.end >= today && effectiveProgress(plan) < 100)
+      .filter(
+        (plan) =>
+          !plan.archived && plan.end >= today && effectiveProgress(plan) < 100
+      )
       .sort((a, b) => a.end.localeCompare(b.end));
   }
 
   function visible(plan, state) {
+    if (plan.archived) return false;
     return state.calendars.find((calendar) => calendar.id === plan.calendarId)?.visible !== false;
   }
 
@@ -132,6 +136,11 @@
     const crossed = MILESTONES.filter((value) => value > from && value <= to);
     if (crossed.length === 0) return;
     const milestone = crossed[crossed.length - 1];
+    const custom = plan.milestoneMessages?.[milestone];
+    if (custom) {
+      deps.showToast(`「${custom}」 计划《${plan.title}》 ${milestone}%`, 5200);
+      return;
+    }
     const poem = randomPoem();
     deps.showToast(`「${poem.line}」 计划《${plan.title}》 ${milestone}%`, 5200);
   }
@@ -221,8 +230,12 @@
     progressLabel.textContent = `${progress.value}%`;
     editorPrev = Number(progress.value);
     document.getElementById('plan-auto').checked = plan ? plan.autoProgress === true : true;
+    document.getElementById('plan-repeat').value = plan?.repeat || 'none';
     editorReminders = (plan?.reminders || []).map((reminder) => ({ ...reminder }));
     renderEditorReminders();
+    document.querySelectorAll('[data-milestone]').forEach((input) => {
+      input.value = plan?.milestoneMessages?.[input.dataset.milestone] || '';
+    });
     deleteBtn.classList.toggle('hidden', !plan);
     updateTypeLabel();
     updateAutoProgressState();
@@ -325,8 +338,13 @@
       changed = true;
       if (announce) {
         const milestone = crossed[crossed.length - 1];
-        const poem = randomPoem();
-        deps.showToast(`「${poem.line}」 计划《${plan.title}》 按时间走到 ${milestone}%`, 5200);
+        const custom = plan.milestoneMessages?.[milestone];
+        if (custom) {
+          deps.showToast(`「${custom}」 计划《${plan.title}》 ${milestone}%`, 5200);
+        } else {
+          const poem = randomPoem();
+          deps.showToast(`「${poem.line}」 计划《${plan.title}》 按时间走到 ${milestone}%`, 5200);
+        }
       }
     }
     if (changed) deps.saveState();
@@ -354,13 +372,20 @@
     let plan;
     let beforeProgress = 0;
     const autoProgress = document.getElementById('plan-auto').checked;
+    const repeat = document.getElementById('plan-repeat').value;
     const reminders = collectEditorReminders();
+    const milestoneMessages = {};
+    document.querySelectorAll('[data-milestone]').forEach((input) => {
+      const value = input.value.trim();
+      if (value) milestoneMessages[input.dataset.milestone] = value.slice(0, 120);
+    });
+    deps.recordHistory?.(editingId ? '修改计划' : '新建计划');
     if (editingId) {
       plan = state.plans.find((item) => item.id === editingId);
       if (!plan) return closeEditor();
       beforeProgress = effectiveProgress(plan);
       const wasAuto = plan.autoProgress === true;
-      Object.assign(plan, { title, start, end, calendarId, progress, notes, autoProgress, reminders });
+      Object.assign(plan, { title, start, end, calendarId, progress, notes, autoProgress, repeat, reminders, milestoneMessages });
       if (autoProgress && !wasAuto) {
         plan.milestonesSeen = MILESTONES.filter(
           (value) => value <= effectiveProgress(plan)
@@ -376,8 +401,10 @@
         progress,
         notes,
         autoProgress,
+        repeat,
         milestonesSeen: [],
         reminders,
+        milestoneMessages,
       };
       if (autoProgress) {
         plan.milestonesSeen = MILESTONES.filter(
@@ -403,14 +430,16 @@
     if (!plan) return closeEditor();
     deps.openConfirm({
       title: '删除计划？',
-      text: `计划《${plan.title}》及其进度记录将被删除，此操作无法撤销。`,
+      text: `计划《${plan.title}》及其进度记录会移入回收站，可以在设置中恢复。`,
       okLabel: '删除',
       onConfirm: () => {
+        deps.recordHistory?.('删除计划');
+        deps.movePlanToTrash?.(plan);
         state.plans = state.plans.filter((item) => item.id !== plan.id);
         deps.saveState();
         deps.render();
         closeEditor();
-        deps.showToast('已删除计划');
+        deps.showToast('计划已移入回收站');
       },
     });
   }

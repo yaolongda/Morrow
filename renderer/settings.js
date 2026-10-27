@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /** 设置中心：通用、工作时间、外观、显示、计划、关于。 */
 (function () {
@@ -8,6 +8,10 @@
   let current = 'general';
   let overrideMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   let info = null;
+  let planFilter = 'active';
+  let batchStart = '';
+  let batchEnd = '';
+  let capturingShortcut = '';
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -54,7 +58,13 @@
   function ensureDefaults(state) {
     if (!state.settings.plans) state.settings.plans = { reminders: true };
     if (!state.settings.display) {
-      state.settings.display = { lunar: true, solarTerms: true, almanac: false, zodiac: false };
+      state.settings.display = {
+        lunar: true,
+        solarTerms: true,
+        almanac: false,
+        zodiac: false,
+        weekNumbers: false,
+      };
     }
     if (!state.settings.workHours) state.settings.workHours = Workday.defaults();
     return state;
@@ -62,6 +72,7 @@
 
   function open(section = 'general') {
     current = section;
+    if (section === 'plans') planFilter = 'active';
     const overlay = $('#settings-overlay');
     overlay.classList.remove('hidden');
     $$('.settings-nav button').forEach((button) => {
@@ -94,6 +105,7 @@
       appearance: '外观',
       display: '显示',
       plans: '计划',
+      trash: '回收站',
       about: '关于',
     };
     $('#settings-title').textContent = titles[current] || '设置';
@@ -107,6 +119,7 @@
     else if (current === 'appearance') content.innerHTML = appearanceHTML(state);
     else if (current === 'display') content.innerHTML = displayHTML(state);
     else if (current === 'plans') content.innerHTML = plansHTML(state);
+    else if (current === 'trash') content.innerHTML = trashHTML(state);
     else content.innerHTML = aboutHTML(state);
     content.scrollTop = preserveScroll ? scrollTop : 0;
   }
@@ -167,18 +180,37 @@
         )}
       </div>
       <div class="set-group">
-        <div class="set-group-title">键盘</div>
-        <div class="set-shortcuts">
-          <span><kbd>T</kbd> 今天</span><span><kbd>D</kbd><kbd>W</kbd><kbd>M</kbd><kbd>Y</kbd> 视图</span>
-          <span><kbd>Ctrl</kbd>+<kbd>N</kbd> 新建日程</span><span><kbd>Ctrl</kbd>+<kbd>,</kbd> 设置</span>
-          <span><kbd>P</kbd> 新建计划</span><span><kbd>Ctrl</kbd>+<kbd>F</kbd> 搜索</span>
-        </div>
+        <div class="set-group-title">自定义快捷键</div>
+        ${[
+          ['today', '回到今天'],
+          ['day', '日视图'],
+          ['week', '周视图'],
+          ['month', '月视图'],
+          ['year', '年视图'],
+          ['newPlan', '新建计划'],
+          ['prev', '上一个时间范围'],
+          ['next', '下一个时间范围'],
+        ]
+          .map(([action, label]) =>
+            row(
+              label,
+              `<button type="button" class="shortcut-key" data-shortcut="${action}">${escapeHtml(
+                state.settings.shortcuts?.[action] || ''
+              )}</button>`,
+              '点击后按下新按键'
+            )
+          )
+          .join('')}
+        <p class="set-hint">Ctrl+N / Ctrl+F / Ctrl+, / Ctrl+Z 等组合键保持不变；按键冲突时以后设置的为准。</p>
       </div>`;
   }
 
   function workHoursHTML(state) {
     const workHours = Workday.normalize(state.settings.workHours);
     const schedule = Schedule.normalize(state.settings.schedule);
+    const templates = Array.isArray(state.settings.shiftTemplates)
+      ? state.settings.shiftTemplates
+      : [];
     const field = (path, value, label) =>
       `<label class="work-time-field"><span>${label}</span><input type="time" class="set-time" data-worktime="${path}" value="${value}"></label>`;
 
@@ -233,6 +265,43 @@
           <div class="set-row-label"><strong>下班庆祝</strong><span>下班时播放动画，并送一句诗</span></div>
           <div class="set-control">${toggle('workHours.off', workHours.off)}</div>
         </div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>播放粒子动画</strong><span>关掉后仍保留庆祝文字与诗句</span></div>
+          <div class="set-control">${toggle('workHours.animation', workHours.animation)}</div>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-group-title">班次模板</div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>应用模板</strong><span>一键切换常用班次</span></div>
+          <div class="set-control shift-template-control">
+            <select class="set-select" id="shift-template-select">
+              <option value="">选择模板…</option>
+              ${templates
+                .map(
+                  (template) =>
+                    `<option value="${escapeHtml(template.id)}">${escapeHtml(
+                      template.name
+                    )}</option>`
+                )
+                .join('')}
+            </select>
+            <button type="button" class="mini-btn" data-shift-apply>应用</button>
+            <button type="button" class="mini-btn" data-shift-delete>删除</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-row-label"><strong>保存当前设置</strong><span>把当前班次与时间存成模板</span></div>
+          <div class="set-control shift-template-save">
+            <input id="shift-template-name" maxlength="20" placeholder="例如：A 班">
+            <button type="button" class="mini-btn" data-shift-save>保存模板</button>
+          </div>
+        </div>
+        ${
+          templates.length
+            ? ''
+            : '<p class="set-hint">还没有模板。调整好班次后，给它起个名字保存，下次就能一键切换。</p>'
+        }
       </div>
       <div class="set-group">
         <div class="set-group-title">法定节假日</div>
@@ -240,7 +309,16 @@
           <div class="set-row-label"><strong>同步中国法定节假日</strong><span>放假自动休息，调休补班日自动上班</span></div>
           <div class="set-control">${toggle('schedule.followHolidays', schedule.followHolidays)}</div>
         </div>
-        <p class="set-hint">内置 2024–2026 年放假与调休安排。下方「特殊日期」优先级更高：把某天点成「补班」，就是加班不放假。</p>
+        <div class="set-row">
+          <div class="set-row-label"><strong>扩展节假日数据</strong><span>导入社区维护的 JSON，不必等新版本</span></div>
+          <div class="set-control shift-template-control">
+            <button type="button" class="mini-btn" data-action="import-holidays">导入 JSON…</button>
+            <button type="button" class="mini-btn" data-action="reset-holidays">恢复内置</button>
+          </div>
+        </div>
+        <p class="set-hint">内置 2024–2026 年放假与调休安排；已导入自定义 ${
+          Object.keys(state.settings.holidayData || {}).length
+        } 条。下方「特殊日期」优先级更高：把某天点成「补班」，就是加班不放假。</p>
       </div>`;
   }
 
@@ -330,6 +408,21 @@
       ${workHoursHTML(state)}
       <div class="set-group">
         <div class="set-group-title">特殊日期</div>
+        <div class="batch-override">
+          <input type="date" id="batch-start" value="${
+            batchStart || ymd(startOfDay(new Date()))
+          }" aria-label="批量开始日期">
+          <span>至</span>
+          <input type="date" id="batch-end" value="${
+            batchEnd || batchStart || ymd(startOfDay(new Date()))
+          }" aria-label="批量结束日期">
+          <div class="batch-override-actions">
+            <button type="button" data-batch-override="work">补班</button>
+            <button type="button" data-batch-override="rest">休息</button>
+            <button type="button" data-batch-override="half">半天</button>
+            <button type="button" data-batch-override="clear">清除</button>
+          </div>
+        </div>
         <div class="override-head">
           <button class="mini-arrow" data-override-nav="-1" aria-label="上个月">‹</button>
           <strong>${overrideMonth.getFullYear()} 年 ${overrideMonth.getMonth() + 1} 月</strong>
@@ -514,6 +607,7 @@
         ${row('显示二十四节气', toggle('display.solarTerms', display.solarTerms), '节气当天以强调色显示')}
         ${row('显示黄历宜忌', toggle('display.almanac', display.almanac), '建除十二神与宜忌，仅作文化参考')}
         ${row('显示星座运势', toggle('display.zodiac', display.zodiac), '本地生成，仅供娱乐')}
+        ${row('显示 ISO 周数', toggle('display.weekNumbers', display.weekNumbers === true), '月视图左侧与周视图标题显示周数')}
       </div>
       <div class="set-group">
         <div class="set-group-title">计划</div>
@@ -550,7 +644,21 @@
   }
 
   function plansHTML(state) {
-    const active = Plans.active(state.plans);
+    const active = Plans.active(state.plans).filter((plan) => !plan.archived);
+    const done = state.plans
+      .filter((plan) => !plan.archived && !active.some((item) => item.id === plan.id))
+      .sort((a, b) => b.end.localeCompare(a.end));
+    const archived = state.plans
+      .filter((plan) => plan.archived)
+      .sort((a, b) => b.end.localeCompare(a.end));
+    const lists = { active, done, archived };
+    const list = lists[planFilter] || active;
+
+    const tab = (id, label, count) =>
+      `<button type="button" class="plan-filter-tab ${
+        planFilter === id ? 'active' : ''
+      }" data-plan-filter="${id}">${label}<em>${count}</em></button>`;
+
     return `
       <div class="set-group">
         <div class="set-group-title">计划类型</div>
@@ -563,24 +671,131 @@
         <button class="set-btn primary" data-action="new-plan">新建计划…</button>
       </div>
       <div class="set-group">
-        <div class="set-group-title">进行中的计划</div>
+        <div class="set-group-title">我的计划</div>
+        <div class="plan-filter-tabs">
+          ${tab('active', '进行中', active.length)}
+          ${tab('done', '已完成', done.length)}
+          ${tab('archived', '已归档', archived.length)}
+        </div>
         ${
-          active.length
-            ? `<div class="settings-plan-list">${active
-                .slice(0, 8)
+          list.length
+            ? `<div class="settings-plan-list">${list
+                .slice(0, 20)
                 .map((plan) => {
                   const meta = Plans.classify(plan);
                   const color = Plans.colorFor(plan, state);
-                  return `<button class="settings-plan-row" data-plan-id="${plan.id}">
+                  const progress = Plans.effectiveProgress(plan);
+                  return `<div class="settings-plan-row" data-plan-id="${plan.id}">
                     <span class="settings-plan-dot" style="--color:${color}"></span>
                     <span class="settings-plan-main"><strong>${escapeHtml(plan.title)}</strong><em>${meta.name} · ${plan.start.slice(5).replace('-', '/')} – ${plan.end.slice(5).replace('-', '/')}</em></span>
-                    <span class="settings-plan-progress">${plan.progress}%</span>
-                  </button>`;
+                    <span class="settings-plan-progress">${progress}%</span>
+                    <button type="button" class="plan-archive-btn" data-plan-archive="${plan.id}">${
+                      plan.archived ? '恢复' : '归档'
+                    }</button>
+                    ${
+                      plan.repeat && plan.repeat !== 'none'
+                        ? `<button type="button" class="plan-archive-btn" data-plan-next="${plan.id}">下一期</button>`
+                        : ''
+                    }
+                  </div>`;
                 })
                 .join('')}</div>`
-            : '<p class="set-hint">还没有进行中的计划。给自己定一个跨周、跨月或跨年的目标吧。</p>'
+            : `<p class="set-hint">${
+                planFilter === 'archived'
+                  ? '还没有归档的计划。'
+                  : planFilter === 'done'
+                    ? '还没有完成的计划。'
+                    : '还没有进行中的计划。给自己定一个跨周、跨月或跨年的目标吧。'
+              }</p>`
         }
       </div>`;
+  }
+
+  function trashHTML(state) {
+    const entries = state.trash || [];
+    const kindLabels = {
+      event: '日程',
+      plan: '计划',
+      occurrence: '单次日程',
+      'series-split': '重复日程',
+    };
+    if (entries.length === 0) {
+      return `
+        <div class="set-group">
+          <div class="set-group-title">回收站</div>
+          <p class="trash-empty">回收站是空的。</p>
+          <p class="set-hint">删除的日程和计划会在这里保留 30 天，可以随时恢复。</p>
+        </div>`;
+    }
+    return `
+      <div class="set-group">
+        <div class="set-group-title">回收站 · ${entries.length} 项</div>
+        <p class="set-hint">删除的日程和计划会保留 30 天。恢复「单次日程」会把那一天重新加回重复系列。</p>
+        <div class="trash-list">
+          ${entries
+            .map((entry) => {
+              const deleted = new Date(entry.deletedAt);
+              const dateText = Number.isNaN(deleted.getTime())
+                ? ''
+                : `${deleted.getMonth() + 1}/${deleted.getDate()} 删除`;
+              const title =
+                entry.title ||
+                entry.item?.title ||
+                entry.meta?.occurrenceDate ||
+                '未命名';
+              return `<div class="trash-row" data-trash-id="${escapeHtml(entry.id)}">
+                <span class="trash-kind">${escapeHtml(kindLabels[entry.kind] || '项目')}</span>
+                <span class="trash-main">
+                  <strong>${escapeHtml(title)}</strong>
+                  <em>${escapeHtml(dateText)}${
+                    entry.kind === 'occurrence' && entry.meta?.occurrenceDate
+                      ? ` · ${escapeHtml(entry.meta.occurrenceDate)}`
+                      : ''
+                  }</em>
+                </span>
+                <button type="button" class="trash-action" data-trash-restore>恢复</button>
+                <button type="button" class="trash-action danger" data-trash-purge>彻底删除</button>
+              </div>`;
+            })
+            .join('')}
+        </div>
+        <button type="button" class="trash-empty-btn" data-trash-empty>清空回收站</button>
+      </div>`;
+  }
+
+  function restoreTrashEntry(id) {
+    const state = ensureDefaults(deps.getState());
+    const entry = (state.trash || []).find((item) => item.id === id);
+    if (!entry) return;
+    deps.recordHistory?.('恢复回收站项目');
+    if (entry.kind === 'event' || entry.kind === 'plan') {
+      if (!entry.item) return;
+      if (
+        !state.calendars.some((calendar) => calendar.id === entry.item.calendarId) &&
+        state.calendars[0]
+      ) {
+        entry.item.calendarId = state.calendars[0].id;
+      }
+      const list = entry.kind === 'event' ? state.events : state.plans;
+      if (!list.some((item) => item.id === entry.item.id)) list.push(entry.item);
+    } else if (entry.kind === 'occurrence') {
+      const event = state.events.find((item) => item.id === entry.meta?.eventId);
+      if (event?.recurrence) {
+        event.recurrence.exceptions = (event.recurrence.exceptions || []).filter(
+          (date) => date !== entry.meta?.occurrenceDate
+        );
+      }
+    } else if (entry.kind === 'series-split') {
+      if (!entry.item) return;
+      const series = state.events.find((item) => item.id === entry.meta?.seriesId);
+      if (series) Object.assign(series, entry.item);
+      else state.events.push(entry.item);
+    }
+    state.trash = state.trash.filter((item) => item.id !== id);
+    state.events.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    deps.onChange({ rerender: true });
+    render();
+    deps.showToast('已从回收站恢复');
   }
 
   function aboutHTML(state) {
@@ -591,7 +806,7 @@
         <p class="about-slogan">朝朝暮暮，皆有安排。</p>
         <p class="about-desc">一款参考 macOS 日历设计的 Windows 桌面日历。四种视图、长期计划、四种可拖拽小组件，所有数据只保存在本机。</p>
         <div class="about-meta">
-          <span>版本 ${info ? info.version : '1.1.0'}</span>
+          <span>版本 ${info ? info.version : '1.2.0'}</span>
           <span>Windows 10 / 11 · x64</span>
           <span>MIT License</span>
         </div>
@@ -635,6 +850,14 @@
       };
       deps.onChange({ soft: true });
       render();
+    } else if (action === 'import-holidays') deps.importHolidays?.();
+    else if (action === 'reset-holidays') {
+      const state = ensureDefaults(deps.getState());
+      state.settings.holidayData = {};
+      Holidays.setCustom({});
+      deps.onChange({ rerender: true });
+      render();
+      deps.showToast('已恢复内置节假日数据');
     } else if (action === 'homepage') deps.openExternal(HOME_URL);
     else if (action === 'releases') deps.openExternal(RELEASES_URL);
   }
@@ -653,6 +876,54 @@
 
     const content = $('#settings-content');
     content.addEventListener('click', (event) => {
+      const shortcutButton = event.target.closest('[data-shortcut]');
+      if (shortcutButton) {
+        capturingShortcut = shortcutButton.dataset.shortcut;
+        shortcutButton.textContent = '按下新按键…';
+        shortcutButton.classList.add('capturing');
+        return;
+      }
+      const restore = event.target.closest('[data-trash-restore]');
+      if (restore) {
+        const row = restore.closest('[data-trash-id]');
+        if (row) restoreTrashEntry(row.dataset.trashId);
+        return;
+      }
+      const purge = event.target.closest('[data-trash-purge]');
+      if (purge) {
+        const row = purge.closest('[data-trash-id]');
+        if (!row) return;
+        const state = ensureDefaults(deps.getState());
+        state.trash = (state.trash || []).filter((item) => item.id !== row.dataset.trashId);
+        deps.onChange({ soft: true });
+        render();
+        deps.showToast('已彻底删除');
+        return;
+      }
+      const emptyTrash = event.target.closest('[data-trash-empty]');
+      if (emptyTrash) {
+        const state = ensureDefaults(deps.getState());
+        const count = (state.trash || []).length;
+        if (count === 0) return;
+        const clear = () => {
+          deps.recordHistory?.('清空回收站');
+          state.trash = [];
+          deps.onChange({ soft: true });
+          render();
+          deps.showToast('回收站已清空');
+        };
+        if (deps.openConfirm) {
+          deps.openConfirm({
+            title: '清空回收站？',
+            text: `将永久删除回收站中的 ${count} 个项目，此操作无法撤销。`,
+            okLabel: '清空',
+            onConfirm: clear,
+          });
+        } else {
+          clear();
+        }
+        return;
+      }
       const actionNode = event.target.closest('[data-action]');
       if (actionNode) {
         handleAction(actionNode.dataset.action);
@@ -758,6 +1029,143 @@
         render();
         return;
       }
+      const shiftApply = event.target.closest('[data-shift-apply]');
+      if (shiftApply) {
+        const state = ensureDefaults(deps.getState());
+        const select = $('#shift-template-select');
+        const template = (state.settings.shiftTemplates || []).find(
+          (item) => item.id === select?.value
+        );
+        if (!template) {
+          deps.showToast('先选择一个班次模板');
+          return;
+        }
+        state.settings.workHours = Workday.normalize(template.workHours);
+        deps.onChange({ rerender: true });
+        render();
+        deps.showToast(`已切换到「${template.name}」`);
+        return;
+      }
+      const shiftDelete = event.target.closest('[data-shift-delete]');
+      if (shiftDelete) {
+        const state = ensureDefaults(deps.getState());
+        const select = $('#shift-template-select');
+        if (!select?.value) {
+          deps.showToast('先选择要删除的模板');
+          return;
+        }
+        state.settings.shiftTemplates = (state.settings.shiftTemplates || []).filter(
+          (item) => item.id !== select.value
+        );
+        deps.onChange({ rerender: true });
+        render();
+        deps.showToast('已删除班次模板');
+        return;
+      }
+      const shiftSave = event.target.closest('[data-shift-save]');
+      if (shiftSave) {
+        const state = ensureDefaults(deps.getState());
+        const name = ($('#shift-template-name')?.value || '').trim();
+        if (!name) {
+          deps.showToast('给模板起个名字吧');
+          return;
+        }
+        const templates = state.settings.shiftTemplates || [];
+        const existing = templates.find((item) => item.name === name);
+        const workHours = Workday.normalize(state.settings.workHours);
+        if (existing) existing.workHours = workHours;
+        else
+          templates.push({
+            id: `shift-${Date.now().toString(36)}`,
+            name: name.slice(0, 20),
+            workHours,
+          });
+        state.settings.shiftTemplates = templates.slice(-20);
+        deps.onChange({ rerender: true });
+        render();
+        deps.showToast(`已保存班次模板「${name}」`);
+        return;
+      }
+      const batch = event.target.closest('[data-batch-override]');
+      if (batch) {
+        const startValue = $('#batch-start')?.value;
+        const endValue = $('#batch-end')?.value;
+        const start = parseYmd(startValue);
+        const end = parseYmd(endValue);
+        if (!startValue || !endValue || Number.isNaN(start.getTime()) || end < start) {
+          deps.showToast('请选择有效的日期范围');
+          return;
+        }
+        const span = Math.round((startOfDay(end) - startOfDay(start)) / 86400000) + 1;
+        if (span > 366) {
+          deps.showToast('一次最多批量修改 366 天');
+          return;
+        }
+        batchStart = startValue;
+        batchEnd = endValue;
+        const state = ensureDefaults(deps.getState());
+        const schedule = Schedule.normalize(state.settings.schedule);
+        deps.recordHistory?.('批量修改特殊日期');
+        for (let index = 0; index < span; index += 1) {
+          const key = ymd(addDays(start, index));
+          if (batch.dataset.batchOverride === 'clear') delete schedule.overrides[key];
+          else schedule.overrides[key] = batch.dataset.batchOverride;
+        }
+        state.settings.schedule = schedule;
+        deps.onChange({ rerender: true });
+        render();
+        deps.showToast(`已更新 ${span} 天的特殊日期`);
+        return;
+      }
+      const planFilterButton = event.target.closest('[data-plan-filter]');
+      if (planFilterButton) {
+        planFilter = planFilterButton.dataset.planFilter;
+        render(true);
+        return;
+      }
+      const nextCycle = event.target.closest('[data-plan-next]');
+      if (nextCycle) {
+        const state = ensureDefaults(deps.getState());
+        const plan = state.plans.find((item) => item.id === nextCycle.dataset.planNext);
+        if (!plan) return;
+        const months =
+          plan.repeat === 'quarterly' ? 3 : plan.repeat === 'yearly' ? 12 : 1;
+        const startDate = addMonths(parseYmd(plan.start), months);
+        const endDate = addMonths(parseYmd(plan.end), months);
+        const start = ymd(startDate);
+        const end = ymd(endDate);
+        if (state.plans.some((item) => item.title === plan.title && item.start === start)) {
+          deps.showToast('下一期计划已经存在');
+          return;
+        }
+        deps.recordHistory?.('创建下一期计划');
+        state.plans.push({
+          ...plan,
+          id: `plan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          start,
+          end,
+          progress: 0,
+          archived: false,
+          milestonesSeen: [],
+          reminders: [],
+        });
+        deps.onChange({ rerender: true });
+        render(true);
+        deps.showToast(`已创建《${plan.title}》的下一期`);
+        return;
+      }
+      const archiveButton = event.target.closest('[data-plan-archive]');
+      if (archiveButton) {
+        const state = ensureDefaults(deps.getState());
+        const plan = state.plans.find((item) => item.id === archiveButton.dataset.planArchive);
+        if (!plan) return;
+        deps.recordHistory?.(plan.archived ? '恢复计划' : '归档计划');
+        plan.archived = !plan.archived;
+        deps.onChange({ rerender: true });
+        render(true);
+        deps.showToast(plan.archived ? '计划已归档' : '计划已恢复');
+        return;
+      }
       const plan = event.target.closest('[data-plan-id]');
       if (plan) {
         close();
@@ -767,6 +1175,12 @@
 
     content.addEventListener('change', (event) => {
       const input = event.target;
+      if (input.id === 'batch-start') {
+        batchStart = input.value;
+        if (!batchEnd || batchEnd < batchStart) batchEnd = batchStart;
+      } else if (input.id === 'batch-end') {
+        batchEnd = input.value;
+      }
       if (input.id === 'schedule-anchor') {
         const state = ensureDefaults(deps.getState());
         const schedule = Schedule.normalize(state.settings.schedule);
@@ -859,6 +1273,34 @@
       deps.onChange({ soft: true });
       render();
     });
+
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (!capturingShortcut) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === 'Escape') {
+          capturingShortcut = '';
+          render(true);
+          return;
+        }
+        if (
+          !/^[a-z0-9]$/i.test(event.key) &&
+          !/^Arrow(Left|Right|Up|Down)$/.test(event.key)
+        ) {
+          return;
+        }
+        const state = ensureDefaults(deps.getState());
+        if (!state.settings.shortcuts) state.settings.shortcuts = {};
+        state.settings.shortcuts[capturingShortcut] =
+          event.key.length === 1 ? event.key.toLowerCase() : event.key;
+        capturingShortcut = '';
+        deps.onChange({ rerender: true });
+        render(true);
+      },
+      true
+    );
   }
 
   async function importBackground(file) {

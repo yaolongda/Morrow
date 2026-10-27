@@ -10,6 +10,7 @@ const {
   screen,
   dialog,
   shell,
+  Notification,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -20,6 +21,10 @@ const SMOKE = process.env.CALENDAR_SMOKE === '1';
 const SMOKE_DIR = process.env.CALENDAR_SMOKE_DIR || path.join(__dirname, 'screenshots');
 const TEST_EXPORT_PATH = process.env.CALENDAR_TEST_EXPORT || null;
 const TEST_IMPORT_PATH = process.env.CALENDAR_TEST_IMPORT || null;
+const TEST_HOLIDAY_IMPORT = process.env.CALENDAR_TEST_HOLIDAY_IMPORT || null;
+const TEST_ICS_IMPORT = process.env.CALENDAR_TEST_ICS_IMPORT || null;
+const TEST_ICS_EXPORT = process.env.CALENDAR_TEST_ICS_EXPORT || null;
+const TEST_CAPTURE = process.env.CALENDAR_TEST_CAPTURE || null;
 
 const WIDGET_SIZES = {
   month: { width: 360, height: 388 },
@@ -45,10 +50,15 @@ let pendingNavigation = null;
 let storePath = null;
 let widgetsPath = null;
 let windowStatePath = null;
+let shardDir = null;
+const SHARD_THRESHOLD = 2000;
 
 let widgetConfigs = [];
 let widgetWindows = new Map();
 let saveWidgetsTimer = null;
+let reminderSchedule = [];
+const firedReminderKeys = new Map();
+let trayPreviewWindow = null;
 
 if (SMOKE) {
   app.setPath('userData', path.join(__dirname, '.smoke-data'));
@@ -79,6 +89,84 @@ function dateStamp() {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
 }
 
+function eventYears(event) {
+  const start = String(event?.start || '').slice(0, 4);
+  const end = String(event?.end || '').slice(0, 4);
+  const startYear = Number(start);
+  const endYear = Number(end);
+  if (!Number.isInteger(startYear)) return [];
+  if (!Number.isInteger(endYear) || endYear < startYear) return [start];
+  const years = [];
+  for (let year = startYear; year <= endYear && years.length < 10; year += 1) {
+    years.push(String(year));
+  }
+  return years;
+}
+
+function loadStoreData() {
+  const data = readJSON(storePath, null);
+  if (!data || typeof data !== 'object') return null;
+  if (!Array.isArray(data.events)) data.events = [];
+  if (shardDir && fs.existsSync(shardDir)) {
+    const merged = new Map();
+    for (const event of data.events) {
+      if (event?.id) merged.set(event.id, event);
+    }
+    try {
+      for (const file of fs.readdirSync(shardDir)) {
+        if (!/^\d{4}\.json$/.test(file)) continue;
+        const list = readJSON(path.join(shardDir, file), []);
+        if (!Array.isArray(list)) continue;
+        for (const event of list) {
+          if (event?.id) merged.set(event.id, event);
+        }
+      }
+    } catch {
+      // 分片读取失败时保留主文件中的日程
+    }
+    if (merged.size > 0) data.events = [...merged.values()];
+  }
+  return data;
+}
+
+function saveStoreData(data) {
+  const events = Array.isArray(data.events) ? data.events : [];
+  if (events.length > SHARD_THRESHOLD) {
+    const byYear = new Map();
+    for (const event of events) {
+      for (const year of eventYears(event)) {
+        if (!byYear.has(year)) byYear.set(year, []);
+        byYear.get(year).push(event);
+      }
+    }
+    fs.mkdirSync(shardDir, { recursive: true });
+    for (const [year, list] of byYear) {
+      writeJSON(path.join(shardDir, `${year}.json`), list);
+    }
+    try {
+      for (const file of fs.readdirSync(shardDir)) {
+        const year = file.replace(/\.json$/, '');
+        if (/^\d{4}$/.test(year) && !byYear.has(year)) {
+          fs.rmSync(path.join(shardDir, file), { force: true });
+        }
+      }
+    } catch {
+      // 忽略清理失败
+    }
+    writeJSON(storePath, { ...data, events: [], eventsSharded: true });
+    return;
+  }
+
+  writeJSON(storePath, { ...data, eventsSharded: false });
+  if (shardDir && fs.existsSync(shardDir)) {
+    try {
+      fs.rmSync(shardDir, { recursive: true, force: true });
+    } catch {
+      // 忽略清理失败
+    }
+  }
+}
+
 function ensureStore() {
   const data = readJSON(storePath, null);
   const valid =
@@ -86,7 +174,16 @@ function ensureStore() {
     Array.isArray(data.calendars) &&
     data.calendars.length > 0 &&
     Array.isArray(data.events);
-  if (!valid) writeJSON(storePath, createSeedData());
+  if (!valid) {
+    if (fs.existsSync(storePath)) {
+      try {
+        fs.copyFileSync(storePath, `${storePath}.corrupt-${Date.now()}.bak`);
+      } catch {
+        // 备份失败时仍然继续写入示例数据
+      }
+    }
+    writeJSON(storePath, createSeedData());
+  }
 }
 
 function migrateLegacyData() {
@@ -197,6 +294,44 @@ function isPositionVisible(x, y, width, height) {
   });
 }
 
+function clampToWorkArea(x, y, width, height, display) {
+  const area = display.workArea;
+  return {
+    x: Math.min(Math.max(x, area.x + 8), Math.max(area.x + 8, area.x + area.width - width - 8)),
+    y: Math.min(Math.max(y, area.y + 8), Math.max(area.y + 8, area.y + area.height - height - 8)),
+  };
+}
+
+function displayById(id) {
+  if (id == null) return null;
+  return screen.getAllDisplays().find((display) => String(display.id) === String(id)) || null;
+}
+
+function relocateWidgets() {
+  const primary = screen.getPrimaryDisplay();
+  for (const config of widgetConfigs) {
+    const display = displayById(config.displayId) || primary;
+    const width = Math.max(280, Math.round(config.width || WIDGET_SIZES[config.type].width));
+    const height = Math.max(280, Math.round(config.height || WIDGET_SIZES[config.type].height));
+    const target = clampToWorkArea(
+      Number.isFinite(config.x) ? config.x : display.workArea.x + 40,
+      Number.isFinite(config.y) ? config.y : display.workArea.y + 40,
+      width,
+      height,
+      display
+    );
+    config.displayId = display.id;
+    const changed = config.x !== target.x || config.y !== target.y;
+    config.x = target.x;
+    config.y = target.y;
+    const win = widgetWindows.get(config.id);
+    if (win && !win.isDestroyed() && changed) {
+      win.setBounds({ ...target, width, height }, true);
+    }
+  }
+  schedulePersistWidgets();
+}
+
 function createWidgetWindow(config, options = {}) {
   const size = WIDGET_SIZES[config.type];
   if (!size) return null;
@@ -209,8 +344,23 @@ function createWidgetWindow(config, options = {}) {
   const fallback = widgetPosition(config.type);
   const x = typeof config.x === 'number' ? config.x : fallback.x;
   const y = typeof config.y === 'number' ? config.y : fallback.y;
-  const positioned =
-    isPositionVisible(x, y, width, height) ? { x, y } : fallback;
+  const visiblePosition = isPositionVisible(x, y, width, height) ? { x, y } : fallback;
+  const targetDisplay =
+    displayById(config.displayId) ||
+    screen.getDisplayMatching({
+      x: visiblePosition.x,
+      y: visiblePosition.y,
+      width,
+      height,
+    });
+  const positioned = clampToWorkArea(
+    visiblePosition.x,
+    visiblePosition.y,
+    width,
+    height,
+    targetDisplay
+  );
+  config.displayId = targetDisplay.id;
 
   const win = new BrowserWindow({
     width,
@@ -253,6 +403,15 @@ function createWidgetWindow(config, options = {}) {
       locked: config.locked ? '1' : '0',
       width: String(config.width),
       height: String(config.height),
+      theme: config.theme || 'inherit',
+      opacity:
+        Number.isFinite(Number(config.opacity)) && config.opacity !== null
+          ? String(config.opacity)
+          : '',
+      glass:
+        Number.isFinite(Number(config.glass)) && config.glass !== null
+          ? String(config.glass)
+          : '',
     },
   });
 
@@ -274,6 +433,7 @@ function createWidgetWindow(config, options = {}) {
     const bounds = win.getBounds();
     config.x = bounds.x;
     config.y = bounds.y;
+    config.displayId = screen.getDisplayMatching(bounds).id;
     schedulePersistWidgets();
   });
 
@@ -283,6 +443,7 @@ function createWidgetWindow(config, options = {}) {
     config.y = bounds.y;
     config.width = bounds.width;
     config.height = bounds.height;
+    config.displayId = screen.getDisplayMatching(bounds).id;
     schedulePersistWidgets();
   });
 
@@ -310,10 +471,21 @@ function addWidget(type, options = {}) {
     height: options.height ?? WIDGET_SIZES[type].height,
     pin: Boolean(options.pin),
     locked: Boolean(options.locked),
+    theme: ['inherit', 'classic', 'paper', 'mist'].includes(options.theme)
+      ? options.theme
+      : 'inherit',
+    opacity:
+      Number.isFinite(Number(options.opacity)) && options.opacity !== null
+        ? Math.max(0.4, Math.min(1, Number(options.opacity)))
+        : null,
+    glass:
+      Number.isFinite(Number(options.glass)) && options.glass !== null
+        ? Math.max(0, Math.min(36, Math.round(Number(options.glass))))
+        : null,
   };
   widgetConfigs.push(config);
-  persistWidgets();
   createWidgetWindow(config, { reveal: true });
+  persistWidgets();
   broadcastWidgetsChanged();
   return config;
 }
@@ -353,6 +525,17 @@ function importWidgets(configs) {
         : WIDGET_SIZES[item.type].height,
       pin: Boolean(item.pin),
       locked: Boolean(item.locked),
+      theme: ['inherit', 'classic', 'paper', 'mist'].includes(item.theme)
+        ? item.theme
+        : 'inherit',
+      opacity:
+        Number.isFinite(Number(item.opacity)) && item.opacity !== null
+          ? Math.max(0.4, Math.min(1, Number(item.opacity)))
+          : null,
+      glass:
+        Number.isFinite(Number(item.glass)) && item.glass !== null
+          ? Math.max(0, Math.min(36, Math.round(Number(item.glass))))
+          : null,
     };
     if (config.x == null || config.y == null) {
       const position = widgetPosition(config.type);
@@ -529,6 +712,145 @@ function createTray() {
   ]);
   tray.setContextMenu(menu);
   tray.on('double-click', () => showMainWindow());
+  tray.on('click', () => toggleTrayPreview());
+}
+
+function createTrayPreviewWindow() {
+  if (trayPreviewWindow && !trayPreviewWindow.isDestroyed()) return trayPreviewWindow;
+  trayPreviewWindow = new BrowserWindow({
+    width: 300,
+    height: 382,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      spellcheck: false,
+    },
+  });
+  trayPreviewWindow.loadFile(path.join(__dirname, 'renderer', 'tray.html'));
+  trayPreviewWindow.on('blur', () => {
+    if (trayPreviewWindow && !trayPreviewWindow.isDestroyed()) trayPreviewWindow.hide();
+  });
+  trayPreviewWindow.on('closed', () => {
+    trayPreviewWindow = null;
+  });
+  return trayPreviewWindow;
+}
+
+function showTrayPreview() {
+  const win = createTrayPreviewWindow();
+  if (!win || win.isDestroyed()) return;
+  const trayBounds = tray && !tray.isDestroyed() ? tray.getBounds() : null;
+  const display = trayBounds
+    ? screen.getDisplayMatching(trayBounds)
+    : screen.getPrimaryDisplay();
+  const area = display.workArea;
+  const width = 300;
+  const height = 382;
+  let x = area.x + area.width - width - 12;
+  let y = area.y + area.height - height - 12;
+  if (trayBounds && trayBounds.width > 0) {
+    x = trayBounds.x + trayBounds.width / 2 - width / 2;
+    y =
+      trayBounds.y + trayBounds.height + 8 + height > area.y + area.height
+        ? trayBounds.y - height - 8
+        : trayBounds.y + trayBounds.height + 8;
+  }
+  x = Math.max(area.x + 8, Math.min(x, area.x + area.width - width - 8));
+  y = Math.max(area.y + 8, Math.min(y, area.y + area.height - height - 8));
+  win.setBounds({ x: Math.round(x), y: Math.round(y), width, height });
+  win.show();
+  win.focus();
+}
+
+function toggleTrayPreview() {
+  if (trayPreviewWindow && !trayPreviewWindow.isDestroyed() && trayPreviewWindow.isVisible()) {
+    trayPreviewWindow.hide();
+    return;
+  }
+  showTrayPreview();
+}
+
+/* ------------------------------------------------------------------ */
+/* 日程提醒                                                            */
+/* ------------------------------------------------------------------ */
+
+function cleanReminderList(list) {
+  if (!Array.isArray(list)) return [];
+  const result = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    if (typeof item.eventId !== 'string' || typeof item.at !== 'string') continue;
+    const at = Date.parse(item.at);
+    if (!Number.isFinite(at)) continue;
+    result.push({
+      key: typeof item.key === 'string' ? item.key.slice(0, 200) : `${item.eventId}:${item.at}`,
+      eventId: item.eventId.slice(0, 120),
+      occurrenceDate:
+        typeof item.occurrenceDate === 'string' ? item.occurrenceDate.slice(0, 10) : '',
+      title: typeof item.title === 'string' ? item.title.slice(0, 200) : '日程提醒',
+      body: typeof item.body === 'string' ? item.body.slice(0, 500) : '',
+      at: new Date(at).toISOString(),
+      system: item.system === true,
+    });
+    if (result.length >= 500) break;
+  }
+  return result;
+}
+
+function fireReminder(reminder) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('reminder:fire', reminder);
+  }
+  if (reminder.system && Notification.isSupported()) {
+    try {
+      const notification = new Notification({
+        title: reminder.title || '日程提醒',
+        body: reminder.body || '',
+        silent: false,
+      });
+      notification.on('click', () => {
+        showMainWindow({
+          eventId: reminder.eventId,
+          occurrenceDate: reminder.occurrenceDate,
+        });
+      });
+      notification.show();
+    } catch {
+      // 系统通知不可用时保留应用内提醒
+    }
+  }
+}
+
+function checkReminders() {
+  const now = Date.now();
+  for (const reminder of reminderSchedule) {
+    const at = Date.parse(reminder.at);
+    if (!Number.isFinite(at)) continue;
+    if (at > now + 1000) continue;
+    if (at < now - 10 * 60000) continue;
+    if (firedReminderKeys.has(reminder.key)) continue;
+    firedReminderKeys.set(reminder.key, now);
+    fireReminder(reminder);
+  }
+  if (firedReminderKeys.size > 500) {
+    for (const [key, time] of firedReminderKeys) {
+      if (now - time > 7 * 86400000) firedReminderKeys.delete(key);
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -536,13 +858,45 @@ function createTray() {
 /* ------------------------------------------------------------------ */
 
 function registerIpc() {
-  ipcMain.handle('store:load', () => readJSON(storePath, null));
+  ipcMain.handle('store:load', () => loadStoreData());
 
   ipcMain.handle('store:save', (_event, data) => {
     if (!data || typeof data !== 'object') return false;
-    writeJSON(storePath, data);
+    saveStoreData(data);
     broadcastStore(data);
     return true;
+  });
+
+  ipcMain.handle('reminders:sync', (_event, list) => {
+    reminderSchedule = cleanReminderList(list);
+    return reminderSchedule.length;
+  });
+
+  ipcMain.handle('tray:preview', () => {
+    showTrayPreview();
+    return true;
+  });
+
+  ipcMain.handle('holiday:import', async () => {    let filePath = TEST_HOLIDAY_IMPORT;
+    if (!filePath) {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '导入节假日数据',
+        properties: ['openFile'],
+        filters: [{ name: '节假日 JSON', extensions: ['json'] }],
+      });
+      if (result.canceled || !result.filePaths[0]) return { canceled: true };
+      filePath = result.filePaths[0];
+    }
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size > 2 * 1024 * 1024) {
+        return { ok: false, error: '节假日文件超过 2 MB' };
+      }
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      return { ok: true, data, filePath };
+    } catch (error) {
+      return { ok: false, error: `无法读取节假日文件：${error.message}` };
+    }
   });
 
   ipcMain.handle('app:info', () => ({
@@ -550,6 +904,91 @@ function registerIpc() {
     platform: process.platform,
     dataPath: storePath,
   }));
+
+  ipcMain.handle('ics:import', async () => {
+    let filePath = TEST_ICS_IMPORT;
+    if (!filePath) {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '导入 iCalendar',
+        properties: ['openFile'],
+        filters: [{ name: 'iCalendar', extensions: ['ics'] }],
+      });
+      if (result.canceled || !result.filePaths[0]) return { canceled: true };
+      filePath = result.filePaths[0];
+    }
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size > 20 * 1024 * 1024) {
+        return { ok: false, error: 'iCalendar 文件超过 20 MB' };
+      }
+      return { ok: true, text: fs.readFileSync(filePath, 'utf8'), filePath };
+    } catch (error) {
+      return { ok: false, error: `无法读取 iCalendar 文件：${error.message}` };
+    }
+  });
+
+  ipcMain.handle('ics:export', async (_event, payload = {}) => {
+    const text = typeof payload.text === 'string' ? payload.text : '';
+    if (!text || text.length > 20 * 1024 * 1024) {
+      return { ok: false, error: '导出内容无效' };
+    }
+    let filePath = TEST_ICS_EXPORT;
+    if (!filePath) {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出 iCalendar',
+        defaultPath: path.join(
+          app.getPath('documents'),
+          payload.defaultName || `朝暮日历-${dateStamp()}.ics`
+        ),
+        filters: [{ name: 'iCalendar', extensions: ['ics'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      filePath = result.filePath;
+    }
+    try {
+      fs.writeFileSync(filePath, text, 'utf8');
+      return { ok: true, filePath };
+    } catch (error) {
+      return { ok: false, error: `无法写入 iCalendar 文件：${error.message}` };
+    }
+  });
+
+  ipcMain.handle('view:capture', async (_event, rect = {}) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: '窗口不可用' };
+    const width = Math.max(1, Math.min(4000, Math.round(Number(rect.width) || 0)));
+    const height = Math.max(1, Math.min(4000, Math.round(Number(rect.height) || 0)));
+    if (width < 10 || height < 10) return { ok: false, error: '截图区域无效' };
+    let image;
+    try {
+      image = await mainWindow.webContents.capturePage({
+        x: Math.max(0, Math.round(Number(rect.x) || 0)),
+        y: Math.max(0, Math.round(Number(rect.y) || 0)),
+        width,
+        height,
+      });
+    } catch (error) {
+      return { ok: false, error: `截图失败：${error.message}` };
+    }
+    let filePath = TEST_CAPTURE;
+    if (!filePath) {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出当前视图图片',
+        defaultPath: path.join(
+          app.getPath('pictures'),
+          rect.defaultName || `朝暮-${dateStamp()}.png`
+        ),
+        filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      filePath = result.filePath;
+    }
+    try {
+      fs.writeFileSync(filePath, image.toPNG());
+      return { ok: true, filePath };
+    } catch (error) {
+      return { ok: false, error: `无法写入图片：${error.message}` };
+    }
+  });
 
   ipcMain.handle('config:export', async (_event, data) => {
     if (
@@ -711,8 +1150,33 @@ function registerIpc() {
     broadcastWidgetsChanged();
   });
 
-  ipcMain.handle('widget:set-size', (event, size) => {
+  ipcMain.handle('widget:set-appearance', (event, appearance = {}) => {
     const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const config = widgetConfigs.find((item) => item.id === win.__widgetId);
+    if (!config) return null;
+    config.theme = ['inherit', 'classic', 'paper', 'mist'].includes(appearance.theme)
+      ? appearance.theme
+      : 'inherit';
+    config.opacity =
+      Number.isFinite(Number(appearance.opacity)) && appearance.opacity !== null
+        ? Math.max(0.4, Math.min(1, Number(appearance.opacity)))
+        : null;
+    config.glass =
+      Number.isFinite(Number(appearance.glass)) && appearance.glass !== null
+        ? Math.max(0, Math.min(36, Math.round(Number(appearance.glass))))
+        : null;
+    schedulePersistWidgets();
+    broadcastWidgetsChanged();
+    event.sender.send('widget:appearance-changed', {
+      theme: config.theme,
+      opacity: config.opacity,
+      glass: config.glass,
+    });
+    return true;
+  });
+
+  ipcMain.handle('widget:set-size', (event, size) => {    const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return null;
     const config = widgetConfigs.find((item) => item.id === win.__widgetId);
     if (!config) return null;
@@ -731,6 +1195,7 @@ function registerIpc() {
     win.setBounds({ x, y, width, height }, true);
     config.x = x;
     config.y = y;
+    config.displayId = screen.getDisplayMatching({ x, y, width, height }).id;
     config.width = width;
     config.height = height;
     persistWidgets();
@@ -871,6 +1336,7 @@ if (!gotLock) {
     storePath = path.join(app.getPath('userData'), 'calendar-data.json');
     widgetsPath = path.join(app.getPath('userData'), 'widgets.json');
     windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
+    shardDir = path.join(app.getPath('userData'), 'events');
 
     Menu.setApplicationMenu(null);
     app.setAppUserModelId('com.yaolongda.morrow');
@@ -881,6 +1347,10 @@ if (!gotLock) {
     registerIpc();
     createWindow();
     createTray();
+    setInterval(checkReminders, 10000);
+    screen.on('display-removed', relocateWidgets);
+    screen.on('display-added', relocateWidgets);
+    screen.on('display-metrics-changed', relocateWidgets);
 
     for (const config of widgetConfigs) {
       createWidgetWindow(config);

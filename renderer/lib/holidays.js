@@ -7,8 +7,7 @@
  */
 
 (function () {
-  const HOLIDAYS = {
-    '2024-01-01': '元旦',
+  const HOLIDAYS = {    '2024-01-01': '元旦',
     '2024-02-10': '春节',
     '2024-02-11': '春节',
     '2024-02-12': '春节',
@@ -123,9 +122,102 @@
 
   const pad = (value) => String(value).padStart(2, '0');
   const ymd = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const isDateKey = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  let custom = {};
+
+  function cleanName(value) {
+    if (typeof value !== 'string') return '';
+    const parts = value.split(',');
+    return (parts.length > 1 ? parts[1] : parts[0]).trim().slice(0, 20);
+  }
+
+  function put(map, key, name, type) {
+    if (!isDateKey(key) || !name) return;
+    const kind = type === 'workday' ? 'workday' : 'holiday';
+    map[key] = {
+      name: kind === 'workday' && !name.endsWith('调休') ? `${name}调休` : name,
+      type: kind,
+    };
+  }
+
+  function addCollection(map, collection, type) {
+    if (!collection || typeof collection !== 'object') return;
+    for (const [key, value] of Object.entries(collection)) {
+      const name =
+        typeof value === 'string' ? cleanName(value) : cleanName(value?.name);
+      put(map, key, name, value?.type || type);
+      if (Object.keys(map).length >= 5000) return;
+    }
+  }
+
+  function parse(input) {
+    const map = {};
+    if (!input || typeof input !== 'object') return map;
+    if (Array.isArray(input)) {
+      for (const item of input) {
+        if (!item || typeof item !== 'object') continue;
+        put(map, String(item.date || ''), cleanName(item.name), item.type);
+        if (Object.keys(map).length >= 5000) break;
+      }
+      return map;
+    }
+    if (input.holidays || input.workdays) {
+      addCollection(map, input.holidays, 'holiday');
+      addCollection(map, input.workdays, 'workday');
+      return map;
+    }
+    if (input.years && typeof input.years === 'object') {
+      for (const yearData of Object.values(input.years)) {
+        addCollection(map, yearData?.holidays, 'holiday');
+        addCollection(map, yearData?.workdays, 'workday');
+      }
+      return map;
+    }
+    for (const [key, value] of Object.entries(input)) {
+      if (isDateKey(key)) {
+        put(
+          map,
+          key,
+          typeof value === 'string' ? cleanName(value) : cleanName(value?.name),
+          value?.type
+        );
+      } else if (/^\d{4}$/.test(key) && value && typeof value === 'object') {
+        addCollection(map, value.holidays, 'holiday');
+        addCollection(map, value.workdays, 'workday');
+      }
+      if (Object.keys(map).length >= 5000) break;
+    }
+    return map;
+  }
+
+  function setCustom(input) {
+    custom = {};
+    if (!input || typeof input !== 'object') return;
+    for (const [key, value] of Object.entries(input)) {
+      if (!isDateKey(key)) continue;
+      if (typeof value === 'string') {
+        put(custom, key, cleanName(value), 'holiday');
+      } else if (value && typeof value === 'object') {
+        put(custom, key, cleanName(value.name), value.type);
+      }
+      if (Object.keys(custom).length >= 5000) break;
+    }
+  }
+
+  function clearCustom() {
+    custom = {};
+  }
+
+  function customData() {
+    return { ...custom };
+  }
 
   function info(date) {
     const key = typeof date === 'string' ? date : ymd(date);
+    if (custom[key]) {
+      return { key, name: custom[key].name, type: custom[key].type, custom: true };
+    }
     if (HOLIDAYS[key]) return { key, name: HOLIDAYS[key], type: 'holiday' };
     if (WORKDAYS[key]) return { key, name: WORKDAYS[key], type: 'workday' };
     return null;
@@ -144,8 +236,26 @@
   }
 
   function coverage() {
-    return { from: '2024-01-01', to: '2026-12-31' };
+    const years = new Set(['2024', '2025', '2026']);
+    for (const key of Object.keys(custom)) years.add(key.slice(0, 4));
+    const sorted = [...years].sort();
+    return {
+      from: `${sorted[0]}-01-01`,
+      to: `${sorted[sorted.length - 1]}-12-31`,
+      years: sorted,
+      customCount: Object.keys(custom).length,
+    };
   }
 
-  window.Holidays = { info, nameFor, isHoliday, isMakeupWorkday, coverage };
+  window.Holidays = {
+    info,
+    nameFor,
+    isHoliday,
+    isMakeupWorkday,
+    coverage,
+    parse,
+    setCustom,
+    clearCustom,
+    customData,
+  };
 })();

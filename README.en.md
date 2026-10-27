@@ -1,4 +1,4 @@
-# Morrow · 朝暮
+﻿# Morrow · 朝暮
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6)
 ![Electron 45](https://img.shields.io/badge/Electron-45-47848F)
@@ -18,7 +18,7 @@
 Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 ```text
-朝暮-Morrow-Setup-1.1.0.exe
+朝暮-Morrow-Setup-1.2.0.exe
 ```
 
 - Windows 10 / 11, x64
@@ -41,9 +41,22 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 - Seven presets: **daily, every weekday, weekly (pick any days), every two weeks, monthly, quarterly, yearly**.
 - Optional repeat end date; leave it empty to repeat indefinitely.
-- When editing a recurring event, choose **This event** or **All events**: the former changes or deletes only one occurrence, the latter updates the whole series (changing the date shifts the series).
+- When editing a recurring event, choose **This event**, **This and following**, or **All events**; deletion offers the same three scopes and keeps past history.
 - Occurrences expand automatically in every view and in all four desktop widgets, marked with ↻.
 - Search jumps to the next upcoming occurrence instead of the series' first date.
+
+### Event reminders
+
+- Set a reminder per event: 5 / 15 / 30 minutes, 1 hour, 1 day ahead, or a custom number of minutes.
+- A gentle in-app card appears when due, with **Snooze 5 minutes** and **Open event**.
+- Optionally also send a **Windows system notification**; reminders keep firing from the main process when the app is minimized to the tray.
+- Everything is computed locally; nothing is uploaded.
+
+### Daily essentials
+
+- Stacked all-day events in week/day views collapse into "N more all-day events" and expand on click.
+- **Ctrl+Z / Ctrl+Shift+Z** undo and redo event and plan changes.
+- Deleted events and plans go to a **Recycle Bin** for 30 days, restorable in Settings → Recycle Bin.
 
 ### Shift hours and off-work celebrations
 
@@ -61,13 +74,15 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 - Bundled 2024–2026 holiday and make-up workday arrangements: holidays automatically become rest days, make-up days become workdays.
 - Holiday names appear in the month view; the settings calendar marks them with a dot.
 - Special-date overrides win: click a holiday and set it to "work" when you have to work through it.
+- Import a community-maintained holiday JSON to extend 2027 and beyond; built-in data is preserved and can be restored.
 - Holiday syncing can be turned off in Settings → Work schedule.
 
 ### Work rhythm
 
 - Choose the week start: **Monday / Sunday / Saturday**.
 - Rest-day presets: double day off, single day off, alternating big/small weeks, 3-on/1-off, Saturday half-day, Saturday half-day with alternating weekends, five days off per month (custom), or fully custom weekdays.
-- Override any date as rest, half-day or work, for holidays and make-up days.
+- Override any date as rest, half-day or work, for holidays and make-up days — individually or for a date range.
+- Save shift setups as templates (A shift, B shift, night shift) and switch with one click.
 - Rest days are softly highlighted across every calendar view, the mini calendar and all desktop widgets, and stay in sync.
 
 ![Work schedule](docs/settings-work.png)
@@ -79,7 +94,8 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 - Subtle progress ribbons appear across the month; a dedicated plan band appears in week/day views.
 - **Time-based progress**: new plans advance automatically with the calendar; switch it off to update progress by hand.
 - **Custom reminder nodes**: add dates such as "first milestone review"; on the day, a gentle card with a poem appears — no system notification.
-- Crossing **20 / 50 / 75 / 80 / 90 / 100%** triggers a short classical Chinese poem of encouragement.
+- Crossing **20 / 50 / 75 / 80 / 90 / 100%** triggers a short classical Chinese poem of encouragement; each milestone message can be customized.
+- Archive finished plans and filter by **active / completed / archived** instead of deleting them.
 - Gentle deadline reminders and an active-plan list (with today's node) in the sidebar.
 
 ![Plan editor](docs/plan-editor.png)
@@ -91,11 +107,25 @@ Month, Today, Upcoming, and Month & Agenda.
 - Drag to move; **no fixed small/medium/large presets** — resize freely from the bottom-right grip or window edges.
 - Layout adapts to size: month and agenda sit side by side when wide, stack when narrow; type scale and visible rows follow.
 - Widgets follow the global theme, accent, font, panel opacity, blur, and background image, with subtle entrance animations.
+- Multiple widgets of the same type are supported; each can override its theme, opacity and glass, and remembers its monitor.
 - **Lock position and size** when done; pin above other windows or close. State survives restarts.
 - The Today widget shows lunar date, solar term, work countdown, and plays an off-work celebration.
 - Click a date or event to open it in the main calendar.
 
 ![Off-work celebration](docs/widget-celebration.png)
+
+### More in 1.2
+
+- **Multiple widgets & per-widget appearance**: open several of the same type (up to 10); each can override theme, opacity and glass, and remembers its monitor.
+- **iCalendar**: import/export `.ics`, by calendar and date range, with UID de-duplication; fully local.
+- **Tasks**: a lightweight today list in the sidebar plus an all-tasks panel with due dates and month-view markers.
+- **Event templates, tag colors, note images**: save common events as templates, give an event its own color, and paste up to three images into notes.
+- **ISO week numbers & history**: week numbers in month/week views, back/forward navigation with `Alt+←` / `Alt+→`.
+- **Tray mini calendar**: click the tray icon for a mini month view, create an event or jump to a day.
+- **Print & image export**: print the current view (or save as PDF) and export it as PNG.
+- **Custom shortcuts**: remap today, views, new plan and prev/next.
+- **Lunar enhancements**: almanac clash/direction, plus yearly lunar-birthday events.
+- **Sharded storage**: above 2000 events, events are stored per year in `events/YYYY.json` and merged back automatically.
 
 ![Desktop widgets](docs/widgets-showcase.png)
 
@@ -124,6 +154,7 @@ Open with the gear button or `Ctrl + ,`.
 | `Ctrl + F` or `/` | Search |
 | `Ctrl + ,` | Settings |
 | `Ctrl + Enter` | Save event / plan |
+| `Ctrl + Z` / `Ctrl + Shift + Z` | Undo / redo event and plan changes |
 | `Esc` | Close dialog / search |
 
 ## Build from source
@@ -145,7 +176,7 @@ Build:
 
 ```powershell
 npm run dist
-# dist\朝暮-Morrow-Setup-1.1.0.exe
+# dist\朝暮-Morrow-Setup-1.2.0.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe
@@ -155,8 +186,9 @@ npm run build:portable
 
 ```text
 %APPDATA%\朝暮\
-├─ calendar-data.json    # calendars, events, plans and settings
-├─ widgets.json          # widget position, size, pin and lock
+├─ calendar-data.json    # calendars, plans, settings and tasks
+├─ events/YYYY.json      # event shards when above 2000 events
+├─ widgets.json          # widget position, size, theme, display and lock
 └─ window-state.json     # main window bounds
 ```
 
@@ -179,14 +211,16 @@ npm run test:features
 npm run test:widgets
 ```
 
-59 automated checks: 23 core, 32 feature, 4 widget-restart. Coverage includes work/rest presets, statutory holidays, shift hours and celebration intensity, recurring event expansion and edit scope, plan auto-progress and reminder nodes, settings, widget free resize / theme / responsive layout / celebration animation, config import/export and restart persistence.
+92 automated checks: 23 core, 65 feature, 4 widget-restart. Coverage includes work/rest presets, statutory holidays and holiday JSON import, shift hours and celebration intensity, shift templates, batch date overrides, recurring events and lunar birthdays, event reminders and main-process scheduling, all-day collapse, undo/redo, recycle bin, plan auto-progress / archiving / cycles / custom milestones, iCalendar, tasks, templates, tag colors, week numbers, history navigation, widget multi-instance / per-widget appearance / free resize / celebration animation, sharded storage, config import/export and restart persistence.
 
 ## Known limitations
 
 - Almanac and zodiac content is generated locally for cultural/entertainment reference.
-- Holiday data covers 2024–2026 (chinese-days, MIT); later years fall back to normal weekend rules and can be supplemented with special dates.
+- Holiday data covers 2024–2026 (chinese-days, MIT); later years can be added by importing a holiday JSON, or supplemented with special dates.
 - Mica/Acrylic requires Windows 11.
-- No sync, team sharing, system notifications or week numbers yet.
+- The interface is Simplified Chinese; a full Traditional Chinese UI is not included yet.
+- No sync or team sharing yet; system notifications are optional and require Windows support.
+- The recycle bin keeps items for 30 days, then clears them automatically.
 - Builds are unsigned.
 - Widgets are separate windows and float above other apps when pinned.
 

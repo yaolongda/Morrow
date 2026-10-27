@@ -253,6 +253,15 @@
     const jianchuIndex = mod(day.branchIndex - monthBranch, 12);
     const jianchu = JIANCHU[jianchuIndex];
     const clashBranch = (day.branchIndex + 6) % 12;
+    const shaBranch = day.branchIndex;
+    const sha =
+      [8, 0, 4].includes(shaBranch)
+        ? '煞南'
+        : [2, 6, 10].includes(shaBranch)
+          ? '煞北'
+          : [11, 3, 7].includes(shaBranch)
+            ? '煞西'
+            : '煞东';
     const info = {
       lunar,
       term: termOf(date),
@@ -261,6 +270,8 @@
       yi: JIANCHU_YI[jianchu] || [],
       ji: JIANCHU_JI[jianchu] || [],
       chong: `冲${ZODIAC[clashBranch]}`,
+      sha,
+      chongSha: `冲${ZODIAC[clashBranch]} · ${sha}`,
       element: day.element,
     };
     almanacCache.set(key, info);
@@ -293,6 +304,36 @@
     };
   }
 
+  const lunarSolarCache = new Map();
+
+  function solarForLunar(lunarYear, monthNumber, day, isLeap = false) {
+    const year = Number(lunarYear);
+    const month = Number(monthNumber);
+    const targetDay = Number(day);
+    if (!Number.isInteger(year) || month < 1 || month > 12 || targetDay < 1 || targetDay > 30) {
+      return null;
+    }
+    const cacheKey = `${year}-${month}-${targetDay}-${isLeap ? 1 : 0}`;
+    if (lunarSolarCache.has(cacheKey)) return lunarSolarCache.get(cacheKey);
+    const start = new Date(year, 0, 1);
+    const end = new Date(year + 1, 2, 1);
+    let fallback = null;
+    for (let cursor = start; cursor < end; cursor = new Date(cursor.getTime() + 86400000)) {
+      const info = lunarOf(cursor);
+      if (!info || info.year !== year || info.monthNumber !== month || info.day !== targetDay) {
+        continue;
+      }
+      if (info.isLeap === Boolean(isLeap)) {
+        const result = new Date(cursor);
+        lunarSolarCache.set(cacheKey, result);
+        return result;
+      }
+      if (!fallback) fallback = new Date(cursor);
+    }
+    lunarSolarCache.set(cacheKey, fallback);
+    return fallback;
+  }
+
   function briefOf(date) {
     const info = almanacOf(date);
     return {
@@ -310,6 +351,7 @@
     dayGanzhi,
     almanacOf,
     zodiacOf,
+    solarForLunar,
     briefOf,
     LUNAR_DAY_NAMES,
     TERM_DEFS,

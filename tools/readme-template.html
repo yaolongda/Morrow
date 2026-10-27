@@ -399,6 +399,7 @@
       <a href="#start">快速开始</a>
       <a href="#usage">使用说明</a>
       <a href="#widgets">桌面小组件</a>
+      <a href="#more">1.2 新增</a>
       <a href="#settings">设置中心</a>
       <a href="#shortcuts">快捷键</a>
       <a href="#data">数据与隐私</a>
@@ -430,8 +431,20 @@
         <p>上午/下午、全天或夜班；今天小组件倒计时，下班播放粒子动画与一句诗，节前自动增强。</p>
       </div>
       <div class="feature">
+        <h4>日程提醒</h4>
+        <p>提前 5 / 15 / 30 分钟、1 小时、1 天或自定义；应用内提醒卡 + 可选 Windows 通知，托盘后台也能触发。</p>
+      </div>
+      <div class="feature">
+        <h4>撤销与回收站</h4>
+        <p>Ctrl+Z 撤销日程和计划操作；删除的项目进入回收站保留 30 天，可恢复。</p>
+      </div>
+      <div class="feature">
         <h4>法定节假日</h4>
-        <p>内置 2024–2026 年放假与调休安排，自动休息/上班；特殊日期可设为加班不放假。</p>
+        <p>内置 2024–2026 年放假与调休安排，自动休息/上班；可导入 JSON 扩展未来年份，特殊日期可设为加班。</p>
+      </div>
+      <div class="feature">
+        <h4>班次与批量调休</h4>
+        <p>常用班次保存成模板一键切换；特殊日期可按日期段批量标记补班 / 休息 / 半天。</p>
       </div>
       <div class="feature">
         <h4>多日历与配色</h4>
@@ -495,11 +508,11 @@
       </div>
       <div class="feature">
         <h4>上下班时间</h4>
-        <p>上午 + 下午、全天、夜班三种班次；今天小组件会显示距上班 / 午休 / 下班的时间。</p>
+        <p>上午 + 下午、全天、夜班三种班次；今天小组件会显示距上班 / 午休 / 下班的时间。班次可存成模板一键切换。</p>
       </div>
       <div class="feature">
         <h4>法定节假日</h4>
-        <p>2024–2026 年放假与调休自动同步；特殊日期优先级更高，可把节日设为加班。</p>
+        <p>2024–2026 年放假与调休自动同步；可导入 JSON 扩展未来年份。特殊日期优先级更高，可把节日设为加班。</p>
       </div>
     </div>
     <figure class="figure">
@@ -540,7 +553,8 @@
       <li>月视图中的浅色进度带、周 / 日视图中的计划带，均可点击打开。</li>
       <li><strong>按时间自动推进</strong>：新建计划默认随日期自动增长进度，也可以关掉开关手动拖动。</li>
       <li><strong>自定义提醒节点</strong>：添加日期与名称，节点当天弹出一张温和的提醒卡与一句诗，不使用系统通知。</li>
-      <li>进度经过 <strong>20 / 50 / 75 / 80 / 90 / 100%</strong> 时随机出现一句励志古诗；临近截止时还有温和提醒。</li>
+      <li><strong>归档与筛选</strong>：按进行中 / 已完成 / 已归档查看计划，结束的计划不用删除。</li>
+      <li>进度经过 <strong>20 / 50 / 75 / 80 / 90 / 100%</strong> 时随机出现一句励志古诗；每个里程碑也可以自定义文案。</li>
       <li>侧边栏显示进行中的计划、进度与「今日节点」。</li>
     </ul>
     <figure class="figure">
@@ -554,7 +568,7 @@
     <h2>下载与起步</h2>
     <h3>下载安装包</h3>
     <p>前往本仓库的 <strong>Releases</strong> 页面，下载最新的 Windows 安装包：</p>
-    <pre><code>朝暮-Morrow-Setup-1.1.0.exe</code></pre>
+    <pre><code>朝暮-Morrow-Setup-1.2.0.exe</code></pre>
     <p>系统要求 Windows 10 / 11（x64）。默认按当前用户安装，无需管理员权限；会创建桌面与开始菜单快捷方式，可在「设置 → 应用」中卸载。安装包未做代码签名，首次运行若出现 SmartScreen，请选择「更多信息 → 仍要运行」。</p>
     <div class="split">
       <div>
@@ -569,7 +583,7 @@ npm install</code></pre>
       <div>
         <h3>构建</h3>
         <pre><code>npm run dist
-# dist\朝暮-Morrow-Setup-1.1.0.exe
+# dist\朝暮-Morrow-Setup-1.2.0.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe</code></pre>
@@ -598,6 +612,9 @@ npm run build:portable
       <li>点击 <strong>+</strong>、按 <kbd>Ctrl</kbd> + <kbd>N</kbd>，或双击月视图空白日期新建日程。</li>
       <li>在周/日视图的空白时间列按住并向下拖动，框选时间段后新建。</li>
       <li>点击任意日程打开编辑器；在编辑器中点击「删除日程」。</li>
+      <li>重复日程可选择「仅此日程 / 此后全部 / 所有日程」；删除同样提供三个范围。</li>
+      <li>可为日程设置提醒：提前 5 / 15 / 30 分钟、1 小时、1 天或自定义分钟数，并可选 Windows 通知。</li>
+      <li>周 / 日视图的全天日程过多时会自动折叠为「还有 N 个全天日程」，点一下展开。</li>
       <li>「全天」开关隐藏具体时间，只按日期显示。</li>
       <li>编辑器中按 <kbd>Ctrl</kbd> + <kbd>Enter</kbd> 保存，<kbd>Esc</kbd> 取消。</li>
     </ul>
@@ -650,6 +667,7 @@ npm run build:portable
       <li>鼠标移到小组件上，右上角出现<strong>置顶</strong>与<strong>关闭</strong>按钮。</li>
       <li>拖动卡片（标题或空白处）可移动，位置会自动保存。</li>
       <li><strong>不再限制大 / 中 / 小预设</strong>：拖动右下角手柄或窗口边缘即可自由缩放，布局、字号与可见日程数量随尺寸自适应。</li>
+      <li>同一种小组件可以添加多个；每个小组件可单独覆盖主题、不透明度与毛玻璃，并记住所在显示器。</li>
       <li>小组件跟随全局主题、强调色、字体、面板透明度、毛玻璃与背景图片。</li>
       <li>可<strong>锁定位置与尺寸</strong>，固定后不会误移动；锁定状态会保留。</li>
       <li>默认不强制置顶，留在普通窗口后面；点击图钉可固定在其它窗口上方。</li>
@@ -662,8 +680,46 @@ npm run build:portable
     </figure>
   </section>
 
-  <section class="card" id="settings">
-    <p class="kicker">SETTINGS</p>
+  <section class="card" id="more">
+    <p class="kicker">MORE IN 1.2</p>
+    <h2>1.2 新增能力</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <h4>iCalendar</h4>
+        <p>导入 / 导出 .ics，支持单日历、日期范围和重复规则；全程本地解析，按 UID 去重。</p>
+      </div>
+      <div class="feature">
+        <h4>任务与模板</h4>
+        <p>侧边栏今日任务、全部任务面板、截止日期；常用日程可存成模板一键套用。</p>
+      </div>
+      <div class="feature">
+        <h4>周数与历史</h4>
+        <p>月 / 周视图显示 ISO 周数；标题栏返回 / 前进，Alt+← / Alt+→。</p>
+      </div>
+      <div class="feature">
+        <h4>托盘迷你日历</h4>
+        <p>单击托盘图标弹出迷你月历，直接新建日程或打开某天。</p>
+      </div>
+      <div class="feature">
+        <h4>打印与图片</h4>
+        <p>打印当前视图（可另存 PDF），或导出 PNG 图片。</p>
+      </div>
+      <div class="feature">
+        <h4>农历增强</h4>
+        <p>黄历新增冲煞；日程支持每年按农历生日重复。</p>
+      </div>
+      <div class="feature">
+        <h4>小组件多开</h4>
+        <p>同类型可添加多个，每个独立主题 / 不透明度 / 毛玻璃，并记住显示器。</p>
+      </div>
+      <div class="feature">
+        <h4>数据分片</h4>
+        <p>日程超过 2000 条时按年份写入 events/YYYY.json，数据减少后自动合并。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="settings">    <p class="kicker">SETTINGS</p>
     <h2>设置中心</h2>
     <p class="lead">点击工具栏齿轮或按 <kbd>Ctrl</kbd> + <kbd>,</kbd> 打开。日常功能、外观、显示与关于都在这里。</p>
     <div class="feature-grid">
@@ -711,6 +767,7 @@ npm run build:portable
       <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd> 或 <kbd>/</kbd></td><td>搜索</td></tr>
       <tr><td><kbd>Ctrl</kbd> + <kbd>,</kbd></td><td>打开设置</td></tr>
       <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>保存日程 / 计划（编辑器打开时）</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td>撤销 / 重做日程与计划操作</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>关闭弹窗 / 搜索结果</td></tr>
     </table>
   </section>
@@ -785,15 +842,17 @@ npm run build:portable
   <section class="card" id="notes">
     <p class="kicker">VERIFICATION &amp; LIMITS</p>
     <h2>验证与已知边界</h2>
-    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程展开与编辑范围、计划自动进度与提醒节点、小组件自由缩放/主题/自适应/庆祝动画、配置导入导出与重启恢复等 <strong>59 项检查</strong>。</p>
+    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程三分支编辑、日程提醒与主进程调度、全天折叠、撤销重做、回收站、节假日 JSON 导入、班次模板、批量特殊日期、计划自动进度/归档/自定义里程碑与提醒节点、iCalendar、任务、模板、标签色、周数、历史导航、小组件多开/独立外观、数据分片、小组件自由缩放/主题/自适应/庆祝动画、配置导入导出与重启恢复等 <strong>92 项检查</strong>。</p>
     <pre><code>node tools/e2e.js
 node tools/features-test.js
 node tools/widget-restart-test.js</code></pre>
     <ul>
       <li>农历与节气为本地计算；黄历宜忌为传统建除十二神的简化呈现，星座运势为本地生成的娱乐内容。</li>
       <li>Mica / 亚克力需要 Windows 11；旧系统会回退到普通窗口。</li>
-      <li>法定节假日数据内置 2024–2026 年安排（chinese-days，MIT）；更晚年份回退到普通周末规则，可用特殊日期补充。</li>
-      <li>暂无云同步、团队协作、系统通知提醒与周数显示。</li>
+      <li>法定节假日数据内置 2024–2026 年安排（chinese-days，MIT）；更晚年份可导入节假日 JSON 扩展，或用特殊日期补充。</li>
+      <li>暂无云同步、团队协作；系统通知为可选功能，需要 Windows 支持。</li>
+      <li>界面目前只提供简体中文，繁体中文界面尚未加入。</li>
+      <li>回收站保留 30 天，到期后自动清理。</li>
       <li>小组件是独立窗口，置顶时会覆盖其它应用；不置顶时随普通窗口层级变化。</li>
       <li>安装包与便携版未签名，Windows SmartScreen 可能给出提示。</li>
     </ul>

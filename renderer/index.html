@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
@@ -26,6 +26,12 @@
           </svg>
         </button>
         <button class="today-btn" id="today-btn" title="回到今天 (T)">今天</button>
+        <button class="icon-btn nav-btn history-btn" id="nav-back-btn" title="返回上一个视图 (Alt+←)" aria-label="返回上一个视图" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6-6 6 6 6" /><path d="M3.5 12h16" /></svg>
+        </button>
+        <button class="icon-btn nav-btn history-btn" id="nav-forward-btn" title="前进到下一个视图 (Alt+→)" aria-label="前进到下一个视图" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6 6 6-6 6" /><path d="M20.5 12h-16" /></svg>
+        </button>
         <div class="nav-cluster">
           <button class="icon-btn nav-btn" id="prev-btn" title="上一个" aria-label="上一个">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" /></svg>
@@ -129,11 +135,28 @@
         <section class="plan-section">
           <div class="section-head">
             <span>进行中的计划</span>
+            <button class="section-add" id="plans-all-btn" title="查看全部计划" aria-label="查看全部计划">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" /></svg>
+            </button>
             <button class="section-add" id="add-plan-btn" title="新建计划" aria-label="新建计划">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
             </button>
           </div>
           <div class="plan-list" id="plan-list"></div>
+        </section>
+
+        <section class="task-section">
+          <div class="section-head">
+            <span>今日任务</span>
+            <button class="section-add" id="all-tasks-btn" title="全部任务" aria-label="全部任务">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" /></svg>
+            </button>
+          </div>
+          <div class="task-list" id="task-list"></div>
+          <form class="task-add" id="task-add-form">
+            <input id="task-input" maxlength="160" placeholder="添加今天的任务" autocomplete="off" />
+            <button type="submit" aria-label="添加任务">+</button>
+          </form>
         </section>
 
         <div class="day-brief" id="day-brief"></div>
@@ -169,8 +192,15 @@
           <span class="scope-label">这是重复日程</span>
           <div class="scope-options" role="radiogroup" aria-label="编辑范围">
             <button type="button" class="scope-btn active" data-scope="single" role="radio" aria-checked="true">仅此日程</button>
+            <button type="button" class="scope-btn" data-scope="following" role="radio" aria-checked="false">此后全部</button>
             <button type="button" class="scope-btn" data-scope="series" role="radio" aria-checked="false">所有日程</button>
           </div>
+        </div>
+
+        <div class="template-picker hidden" id="event-template-picker">
+          <span>从模板</span>
+          <select id="event-template-select" aria-label="日程模板"></select>
+          <button type="button" class="template-delete" id="event-template-delete">删除模板</button>
         </div>
 
         <div class="field-row">
@@ -219,6 +249,7 @@
                 <option value="monthly">每月</option>
                 <option value="quarterly">每季度</option>
                 <option value="yearly">每年</option>
+                <option value="lunar">每年（农历生日）</option>
               </select>
               <label class="repeat-until hidden" id="event-until-line">
                 <span>结束于</span>
@@ -231,6 +262,37 @@
           </div>
         </div>
 
+        <div class="field-row reminder-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6.2 9.4a5.8 5.8 0 0 1 11.6 0c0 4.2 1.4 5.5 1.4 6.4H4.8c0-.9 1.4-2.2 1.4-6.4Z" />
+            <path d="M10 19.2a2.2 2.2 0 0 0 4 0" />
+          </svg>
+          <div class="field-content">
+            <div class="reminder-line">
+              <select id="event-reminder" aria-label="提醒">
+                <option value="none">不提醒</option>
+                <option value="5">提前 5 分钟</option>
+                <option value="15">提前 15 分钟</option>
+                <option value="30">提前 30 分钟</option>
+                <option value="60">提前 1 小时</option>
+                <option value="1440">提前 1 天</option>
+                <option value="custom">自定义…</option>
+              </select>
+              <label class="custom-reminder hidden" id="event-reminder-custom-line">
+                <input type="number" id="event-reminder-minutes" min="1" max="10080" step="1" value="10" />
+                <span>分钟前</span>
+              </label>
+            </div>
+            <label class="switch-line reminder-system-line hidden" id="event-reminder-system-line">
+              <span class="switch">
+                <input type="checkbox" id="event-reminder-system" />
+                <span class="switch-track"></span>
+              </span>
+              <span>同时发送 Windows 系统通知</span>
+            </label>
+          </div>
+        </div>
+
         <div class="field-row">
           <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="3.4" y="5" width="17.2" height="15.4" rx="3" />
@@ -239,6 +301,17 @@
           <div class="field-content calendar-select-line">
             <span class="select-dot" id="event-calendar-dot"></span>
             <select id="event-calendar" aria-label="日历"></select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12.2V5.6A1.6 1.6 0 0 1 5.6 4h6.6l8 8-7.6 7.6-8.6-7.4Z" />
+            <circle cx="8.2" cy="8.2" r="1.2" />
+          </svg>
+          <div class="field-content">
+            <span class="event-color-label">标签颜色</span>
+            <div class="event-color-swatches" id="event-color-swatches"></div>
           </div>
         </div>
 
@@ -261,10 +334,13 @@
             maxlength="2000"
             placeholder="添加备注"
           ></textarea>
+          <div class="note-attachments" id="event-attachments"></div>
+          <p class="note-paste-hint">备注框里可以直接粘贴图片（最多 3 张）</p>
         </div>
       </div>
       <div class="event-footer">
         <button class="danger-link hidden" id="event-delete">删除日程</button>
+        <button class="text-btn template-save-btn" id="event-template-save">存为模板</button>
         <span class="save-hint">Ctrl + Enter 保存</span>
       </div>
     </div>
@@ -324,6 +400,9 @@
     <button data-action="new-plan" role="menuitem">新建计划…</button>
     <button data-action="new-event" role="menuitem">新建日程…</button>
     <div class="menu-separator"></div>
+    <button data-action="ics" role="menuitem">导入 / 导出 iCalendar…</button>
+    <button data-action="print-view" role="menuitem">打印当前视图…</button>
+    <button data-action="capture-view" role="menuitem">导出当前视图图片…</button>
     <button data-action="export-config" role="menuitem">导出配置…</button>
     <button data-action="import-config" role="menuitem">导入配置…</button>
     <div class="menu-separator"></div>
@@ -347,8 +426,9 @@
         <button data-section="appearance">外观</button>
         <button data-section="display">显示</button>
         <button data-section="plans">计划</button>
+        <button data-section="trash">回收站</button>
         <button data-section="about">关于</button>
-        <div class="settings-nav-footer" id="settings-version">v1.1.0</div>
+        <div class="settings-nav-footer" id="settings-version">v1.2.0</div>
       </aside>
       <section class="settings-pane">
         <header class="settings-head">
@@ -373,6 +453,16 @@
       <div class="plan-body">
         <input class="title-input" id="plan-title" maxlength="120" placeholder="计划名称" autocomplete="off" />
         <div class="plan-type-line" id="plan-type">短期计划 · 跨周</div>
+        <div class="plan-repeat-line">
+          <span>周期</span>
+          <select id="plan-repeat" aria-label="计划周期">
+            <option value="none">不重复</option>
+            <option value="monthly">每月</option>
+            <option value="quarterly">每季度</option>
+            <option value="yearly">每年</option>
+          </select>
+          <span class="set-hint">在计划列表里可以一键创建下一期</span>
+        </div>
 
         <div class="field-row">
           <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -429,6 +519,17 @@
               </label>
               <span class="plan-auto-hint" id="plan-auto-hint">拖动滑块手动更新，或开启按时间自动推进</span>
             </div>
+            <details class="plan-milestone-custom">
+              <summary>自定义里程碑文案</summary>
+              <div class="milestone-custom-grid">
+                <label><span>20%</span><input data-milestone="20" maxlength="120" placeholder="留空使用古诗"></label>
+                <label><span>50%</span><input data-milestone="50" maxlength="120" placeholder="留空使用古诗"></label>
+                <label><span>75%</span><input data-milestone="75" maxlength="120" placeholder="留空使用古诗"></label>
+                <label><span>80%</span><input data-milestone="80" maxlength="120" placeholder="留空使用古诗"></label>
+                <label><span>90%</span><input data-milestone="90" maxlength="120" placeholder="留空使用古诗"></label>
+                <label><span>100%</span><input data-milestone="100" maxlength="120" placeholder="留空使用古诗"></label>
+              </div>
+            </details>
           </div>
         </div>
 
@@ -471,6 +572,74 @@
     </div>
   </div>
 
+  <div class="overlay hidden" id="event-reminder-overlay">
+    <div class="event-reminder-card" role="dialog" aria-modal="true" aria-labelledby="event-reminder-title">
+      <span class="event-reminder-kicker">日程提醒</span>
+      <span class="event-reminder-time" id="event-reminder-time"></span>
+      <h2 class="event-reminder-title" id="event-reminder-title"></h2>
+      <p class="event-reminder-meta" id="event-reminder-meta"></p>
+      <div class="event-reminder-actions">
+        <button type="button" class="text-btn" id="event-reminder-snooze">5 分钟后提醒</button>
+        <button type="button" class="text-btn" id="event-reminder-open">打开日程</button>
+        <button type="button" class="primary-btn" id="event-reminder-dismiss">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="task-overlay">
+    <div class="dialog task-dialog" role="dialog" aria-modal="true" aria-labelledby="task-title">
+      <div class="dialog-top">
+        <button class="text-btn" id="task-close">关闭</button>
+        <span class="dialog-heading" id="task-title">任务</span>
+        <span></span>
+      </div>
+      <div class="task-body">
+        <form class="task-add-row" id="task-overlay-add">
+          <input id="task-new-title" maxlength="160" placeholder="任务名称" autocomplete="off" />
+          <input type="date" id="task-new-due" aria-label="截止日期" />
+          <button type="submit" class="primary-btn">添加</button>
+        </form>
+        <div class="task-overlay-list" id="task-overlay-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="ics-overlay">
+    <div class="dialog ics-dialog" role="dialog" aria-modal="true" aria-labelledby="ics-title">
+      <div class="dialog-top">
+        <button class="text-btn" id="ics-cancel">取消</button>
+        <span class="dialog-heading" id="ics-title">iCalendar 导入 / 导出</span>
+        <span></span>
+      </div>
+      <div class="ics-body">
+        <section class="ics-section">
+          <h3>导入 .ics</h3>
+          <p>从 Outlook、飞书、Google 日历导出的 .ics 会在本机解析，不会联网。</p>
+          <div class="ics-row">
+            <label for="ics-import-calendar">导入到</label>
+            <select id="ics-import-calendar"></select>
+          </div>
+          <button type="button" class="primary-btn" id="ics-import-btn">选择 .ics 文件…</button>
+        </section>
+        <section class="ics-section">
+          <h3>导出 .ics</h3>
+          <div class="ics-row">
+            <label for="ics-export-calendar">日历</label>
+            <select id="ics-export-calendar"></select>
+          </div>
+          <div class="ics-row">
+            <label>时间范围</label>
+            <input type="date" id="ics-export-start" aria-label="导出开始日期" />
+            <span>至</span>
+            <input type="date" id="ics-export-end" aria-label="导出结束日期" />
+          </div>
+          <p class="set-hint">留空导出全部日程；填写范围后，重复日程会展开成具体实例。</p>
+          <button type="button" class="primary-btn" id="ics-export-btn">导出 .ics 文件…</button>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
 
   <script src="lib/schedule.js"></script>
@@ -478,6 +647,7 @@
   <script src="lib/workday.js"></script>
   <script src="lib/almanac.js"></script>
   <script src="lib/recurrence.js"></script>
+  <script src="lib/ics.js"></script>
   <script src="appearance.js"></script>
   <script src="plans.js"></script>
   <script src="settings.js"></script>

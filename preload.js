@@ -33,14 +33,40 @@ contextBridge.exposeInMainWorld('desktop', {
     onChange: (callback) => subscribe('widgets:changed', callback),
   },
 
+  reminders: {
+    sync: (list) => ipcRenderer.invoke('reminders:sync', list),
+    onFire: (callback) => subscribe('reminder:fire', callback),
+  },
+
+  holidays: {
+    importFile: () => ipcRenderer.invoke('holiday:import'),
+  },
+
+  ics: {
+    importFile: () => ipcRenderer.invoke('ics:import'),
+    exportFile: (payload) => ipcRenderer.invoke('ics:export', payload),
+  },
+
+  view: {
+    capture: (rect) => ipcRenderer.invoke('view:capture', rect),
+  },
+
+  tray: {
+    showPreview: () => ipcRenderer.invoke('tray:preview'),
+  },
+
   widget: {
     setPin: (pin) => ipcRenderer.send('widget:set-pin', pin),
     setSize: (width, height) => ipcRenderer.invoke('widget:set-size', { width, height }),
+    setAppearance: (appearance) =>
+      ipcRenderer.invoke('widget:set-appearance', appearance),
     setLock: (locked) => ipcRenderer.invoke('widget:set-lock', locked),
     close: () => ipcRenderer.send('widget:close'),
     openMain: (payload) => ipcRenderer.send('widget:open-main', payload),
     onStoreChanged: (callback) => subscribe('store:changed', callback),
     onPinChanged: (callback) => subscribe('widget:pin-changed', callback),
     onLockChanged: (callback) => subscribe('widget:lock-changed', callback),
+    onAppearanceChanged: (callback) =>
+      subscribe('widget:appearance-changed', callback),
   },
 });

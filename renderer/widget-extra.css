@@ -705,3 +705,51 @@ body[data-size="xs"] .celebration-hint {
 body[data-size="xs"] .w-greeting {
   display: none;
 }
+
+/* 小组件独立外观 */
+
+.widget-menu-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+
+.widget-menu-fields label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #7d7a84;
+  font-size: 9.5px;
+}
+
+.widget-menu-fields select {
+  padding: 3px 5px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 5px;
+  outline: none;
+  background: #fff;
+  color: #333238;
+  font-family: inherit;
+  font-size: 9.5px;
+  -webkit-app-region: no-drag;
+}
+
+body.widget-alpha .widget-card {
+  background: color-mix(
+    in srgb,
+    var(--widget-base, #ffffff) calc(var(--panel-alpha, 1) * 100%),
+    transparent
+  ) !important;
+  backdrop-filter: blur(var(--glass-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 0px));
+}
+
+html[data-theme="paper"] body.widget-alpha .widget-card {
+  --widget-base: #fffaf3;
+}
+
+html[data-theme="mist"] body.widget-alpha .widget-card {
+  --widget-base: #fbfdff;
+}

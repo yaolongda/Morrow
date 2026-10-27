@@ -518,7 +518,813 @@ async function main() {
     await main.evaluate("window.__calendarTest.dismissReminders()");
     await sleep(250);
 
-    // 10. 小组件：尺寸、锁定、休息日同步
+    // 10. 日程提醒、全天折叠、撤销/重做、回收站、此后全部
+    const reminderSetup = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const pad = (n) => String(n).padStart(2, '0');
+      const now = new Date();
+      const start = new Date(now.getTime() + 20 * 60000);
+      const end = new Date(start.getTime() + 30 * 60000);
+      const fmt = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+        'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      state.events.push({
+        id: 'test-reminder', calendarId: 'work', title: '提醒验证',
+        start: fmt(start), end: fmt(end), allDay: false, location: '', notes: '',
+        recurrence: null, reminder: { minutes: 15, system: true }
+      });
+      window.__app.render();
+      const item = window.__calendarTest.collectReminders().find((r) => r.eventId === 'test-reminder');
+      return { at: item?.at, system: item?.system, title: item?.title };
+    })()`);
+    const reminderMinutesAhead = (Date.parse(reminderSetup.at) - Date.now()) / 60000;
+    check(
+      '日程提醒按提前时间计算',
+      reminderSetup.title === '提醒验证' &&
+        reminderSetup.system === true &&
+        reminderMinutesAhead > 3 &&
+        reminderMinutesAhead < 7,
+      JSON.stringify({ ...reminderSetup, minutesAhead: reminderMinutesAhead })
+    );
+
+    const reminderCard = await main.evaluate(`(() => {
+      const item = window.__calendarTest.collectReminders().find((r) => r.eventId === 'test-reminder');
+      const shown = window.__calendarTest.fireEventReminder(item);
+      return {
+        shown,
+        title: document.querySelector('#event-reminder-title').textContent,
+        time: document.querySelector('#event-reminder-time').textContent
+      };
+    })()`);
+    check(
+      '应用内日程提醒卡可以弹出',
+      reminderCard.shown &&
+        reminderCard.title === '提醒验证' &&
+        reminderCard.time.length > 0,
+      JSON.stringify(reminderCard)
+    );
+    await main.evaluate("document.querySelector('#event-reminder-dismiss').click()");
+    await sleep(250);
+
+    await main.evaluate(`window.desktop.reminders.sync([{
+      key: 'test-scheduler-' + Date.now(),
+      eventId: 'test-reminder',
+      occurrenceDate: ${JSON.stringify(todayKey)},
+      title: '调度提醒验证',
+      body: '由主进程定时触发',
+      at: new Date(Date.now() + 1500).toISOString(),
+      system: false
+    }])`);
+    let schedulerReminder = { open: false, title: '' };
+    for (let attempt = 0; attempt < 30 && !schedulerReminder.open; attempt += 1) {
+      await sleep(500);
+      schedulerReminder = await main.evaluate(`({
+        open: !document.querySelector('#event-reminder-overlay').classList.contains('hidden'),
+        title: document.querySelector('#event-reminder-title').textContent,
+        visible: document.visibilityState,
+        overlays: [...document.querySelectorAll('.overlay:not(.hidden)')].map((node) => node.id)
+      })`);
+    }
+    check(
+      '主进程定时提醒在后台也能触发',
+      schedulerReminder.open && schedulerReminder.title === '调度提醒验证',
+      JSON.stringify(schedulerReminder)
+    );
+    await main.evaluate("document.querySelector('#event-reminder-dismiss').click()");
+    await sleep(250);
+
+    await main.evaluate("window.__calendarTest.setView('week')");
+    await sleep(400);
+    const allDaySetup = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const key = ${JSON.stringify(todayKey)};
+      for (let index = 0; index < 4; index += 1) {
+        state.events.push({
+          id: 'test-allday-' + index, calendarId: 'work', title: '全天折叠' + index,
+          start: key + 'T00:00', end: key + 'T23:59', allDay: true,
+          location: '', notes: '', recurrence: null, reminder: null
+        });
+      }
+      window.__app.render();
+      return {
+        toggle: document.querySelector('.allday-more')?.textContent || '',
+        chips: document.querySelectorAll('.allday-chip').length
+      };
+    })()`);
+    check(
+      '全天日程过多时自动折叠',
+      allDaySetup.toggle.includes('还有'),
+      JSON.stringify(allDaySetup)
+    );
+    const allDayExpandedState = await main.evaluate(`(() => {
+      document.querySelector('.allday-more')?.click();
+      return {
+        toggle: document.querySelector('.allday-more')?.textContent || '',
+        chips: document.querySelectorAll('.allday-chip').length
+      };
+    })()`);
+    check(
+      '全天日程可以展开',
+      allDayExpandedState.toggle.includes('收起') &&
+        allDayExpandedState.chips > allDaySetup.chips,
+      JSON.stringify(allDayExpandedState)
+    );
+    await main.evaluate("document.querySelector('.allday-more')?.click()");
+    await sleep(200);
+
+    await main.evaluate("window.__calendarTest.setView('month'); window.__calendarTest.openEventDialog()");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#event-title').value = '撤销验证';
+      document.querySelector('#event-start-date').value = ${JSON.stringify(todayKey)};
+      document.querySelector('#event-end-date').value = ${JSON.stringify(todayKey)};
+      document.querySelector('#event-start-time').value = '19:00';
+      document.querySelector('#event-end-time').value = '20:00';
+      document.querySelector('#event-save').click();
+    })()`);
+    await sleep(450);
+    const undoBefore = await main.evaluate(
+      "window.__app.getState().events.filter((e) => e.title === '撤销验证').length"
+    );
+    await main.evaluate("window.__calendarTest.undo()");
+    await sleep(350);
+    const undoAfter = await main.evaluate(
+      "window.__app.getState().events.filter((e) => e.title === '撤销验证').length"
+    );
+    await main.evaluate("window.__calendarTest.redo()");
+    await sleep(350);
+    const redoAfter = await main.evaluate(
+      "window.__app.getState().events.filter((e) => e.title === '撤销验证').length"
+    );
+    check(
+      '日程支持撤销与重做',
+      undoBefore === 1 && undoAfter === 0 && redoAfter === 1,
+      JSON.stringify({ undoBefore, undoAfter, redoAfter })
+    );
+
+    await main.evaluate("window.__calendarTest.openEventDialog()");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#event-title').value = '键盘撤销验证';
+      document.querySelector('#event-start-date').value = ${JSON.stringify(todayKey)};
+      document.querySelector('#event-end-date').value = ${JSON.stringify(todayKey)};
+      document.querySelector('#event-start-time').value = '20:00';
+      document.querySelector('#event-end-time').value = '21:00';
+      document.querySelector('#event-save').click();
+    })()`);
+    await sleep(400);
+    await main.evaluate(
+      "document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))"
+    );
+    await sleep(350);
+    const keyboardUndo = await main.evaluate(
+      "window.__app.getState().events.filter((e) => e.title === '键盘撤销验证').length"
+    );
+    await main.evaluate(
+      "document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true }))"
+    );
+    await sleep(350);
+    const keyboardRedo = await main.evaluate(
+      "window.__app.getState().events.filter((e) => e.title === '键盘撤销验证').length"
+    );
+    check(
+      'Ctrl+Z / Ctrl+Shift+Z 快捷键生效',
+      keyboardUndo === 0 && keyboardRedo === 1,
+      JSON.stringify({ keyboardUndo, keyboardRedo })
+    );
+
+    await main.evaluate("window.__calendarTest.openPlanEditor()");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#plan-title').value = '撤销计划验证';
+      document.querySelector('#plan-save').click();
+    })()`);
+    await sleep(450);
+    const planBeforeUndo = await main.evaluate(
+      "window.__app.getState().plans.filter((plan) => plan.title === '撤销计划验证').length"
+    );
+    await main.evaluate("window.__calendarTest.undo()");
+    await sleep(350);
+    const planAfterUndo = await main.evaluate(
+      "window.__app.getState().plans.filter((plan) => plan.title === '撤销计划验证').length"
+    );
+    await main.evaluate("window.__calendarTest.redo()");
+    await sleep(350);
+    const planAfterRedo = await main.evaluate(
+      "window.__app.getState().plans.filter((plan) => plan.title === '撤销计划验证').length"
+    );
+    check(
+      '计划编辑也支持撤销与重做',
+      planBeforeUndo === 1 && planAfterUndo === 0 && planAfterRedo === 1,
+      JSON.stringify({ planBeforeUndo, planAfterUndo, planAfterRedo })
+    );
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.events = state.events.filter((event) => event.title !== '键盘撤销验证');
+      state.plans = state.plans.filter((plan) => plan.title !== '撤销计划验证');
+      window.__app.render();
+    })()`);
+    await sleep(300);
+
+    await main.evaluate(`(() => {
+      const chip = [...document.querySelectorAll('.event-chip')].find((node) =>
+        node.textContent.includes('撤销验证')
+      );
+      chip?.click();
+    })()`);
+    await sleep(300);
+    await main.evaluate("document.querySelector('#event-delete').click()");
+    await sleep(450);
+    const trashAfterDelete = await main.evaluate("window.__calendarTest.trashState()");
+    check(
+      '删除日程进入回收站',
+      trashAfterDelete.some((entry) => entry.title === '撤销验证'),
+      JSON.stringify(trashAfterDelete.map((entry) => entry.title))
+    );
+
+    await main.evaluate("window.__calendarTest.openSettings('trash')");
+    await sleep(350);
+    const trashRows = await main.evaluate("document.querySelectorAll('.trash-row').length");
+    await main.evaluate("document.querySelector('[data-trash-restore]').click()");
+    await sleep(450);
+    const restoredState = await main.evaluate(`({
+      rows: document.querySelectorAll('.trash-row').length,
+      restored: window.__app.getState().events.filter((e) => e.title === '撤销验证').length
+    })`);
+    check(
+      '回收站可以恢复日程',
+      trashRows > 0 && restoredState.restored === 1,
+      JSON.stringify({ trashRows, ...restoredState })
+    );
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    await sleep(250);
+
+    const followingSetup = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const pad = (n) => String(n).padStart(2, '0');
+      const now = new Date();
+      const start = new Date(now);
+      start.setDate(start.getDate() - 5);
+      const fmt = (d, time) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' +
+        pad(d.getDate()) + 'T' + time;
+      state.events.push({
+        id: 'test-following', calendarId: 'work', title: '此后验证',
+        start: fmt(start, '08:00'), end: fmt(start, '09:00'), allDay: false,
+        location: '', notes: '', reminder: null,
+        recurrence: { freq: 'daily', interval: 1, weekdays: [], until: null, exceptions: [] }
+      });
+      window.__calendarTest.setView('month');
+      window.__app.render();
+      return { today: ${JSON.stringify(todayKey)} };
+    })()`);
+    await sleep(350);
+    await main.evaluate(`(() => {
+      const chip = [...document.querySelectorAll('.event-chip')].find((node) =>
+        node.dataset.occurrenceDate === ${JSON.stringify(todayKey)} &&
+        node.textContent.includes('此后验证')
+      );
+      chip?.click();
+    })()`);
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#event-title').value = '此后验证 · 新';
+      document.querySelector('.scope-btn[data-scope="following"]').click();
+      document.querySelector('#event-save').click();
+    })()`);
+    await sleep(450);
+    const followingState = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const oldSeries = state.events.find((event) => event.id === 'test-following');
+      const newSeries = state.events.find((event) => event.title === '此后验证 · 新');
+      const todayChips = [...document.querySelectorAll('.event-chip')].filter(
+        (node) => node.dataset.occurrenceDate === ${JSON.stringify(todayKey)} &&
+          node.textContent.includes('此后验证')
+      );
+      return {
+        until: oldSeries?.recurrence?.until,
+        newStart: newSeries?.start,
+        newFreq: newSeries?.recurrence?.freq,
+        todayTitles: todayChips.map((node) => node.textContent.trim())
+      };
+    })()`);
+    check(
+      '重复日程支持从此日期往后修改',
+      followingState.until < followingSetup.today &&
+        followingState.newStart?.startsWith(followingSetup.today) &&
+        followingState.newFreq === 'daily' &&
+        followingState.todayTitles.some((title) => title.includes('新')),
+      JSON.stringify(followingState)
+    );
+
+    await main.evaluate(`(() => {
+      const chip = [...document.querySelectorAll('.event-chip')].find((node) =>
+        node.dataset.occurrenceDate === ${JSON.stringify(todayKey)} &&
+        node.textContent.includes('此后验证 · 新')
+      );
+      chip?.click();
+    })()`);
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('.scope-btn[data-scope="following"]').click();
+      document.querySelector('#event-delete').click();
+    })()`);
+    await sleep(300);
+    const followingConfirm = await main.evaluate(
+      "!document.querySelector('#confirm-overlay').classList.contains('hidden')"
+    );
+    await main.evaluate("document.querySelector('#confirm-ok').click()");
+    await sleep(450);
+    const afterFollowingDelete = await main.evaluate(`({
+      newSeries: window.__app.getState().events.filter((event) => event.title === '此后验证 · 新').length,
+      trash: window.__calendarTest.trashState().some((entry) => entry.title === '此后验证 · 新')
+    })`);
+    check(
+      '删除此后日程并进入回收站',
+      followingConfirm &&
+        afterFollowingDelete.newSeries === 0 &&
+        afterFollowingDelete.trash,
+      JSON.stringify(afterFollowingDelete)
+    );
+
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.events = state.events.filter(
+        (event) =>
+          !/^test-(allday|reminder|following)/.test(event.id) &&
+          event.title !== '撤销验证' &&
+          event.title !== '此后验证 · 新'
+      );
+      window.__app.render();
+    })()`);
+    await sleep(300);
+
+    // 11. 节假日扩展、班次模板、批量特殊日期、计划归档与自定义里程碑
+    const holidayImportCount = await main.evaluate(`window.__calendarTest.importHolidayData({
+      2027: {
+        holidays: { '2027-01-01': 'New Year,元旦,1' },
+        workdays: { '2027-01-09': 'New Year,元旦,1' }
+      }
+    })`);
+    const holidayImportState = await main.evaluate(`({
+      count: Object.keys(window.__app.getState().settings.holidayData).length,
+      holiday: window.Holidays.info('2027-01-01'),
+      workday: window.Holidays.info('2027-01-09'),
+      dayType: Schedule.dayType(window.__app.getState().settings.schedule, new Date(2027, 0, 1), 1)
+    })`);
+    check(
+      '节假日 JSON 可扩展自定义年份',
+      holidayImportCount === 2 &&
+        holidayImportState.count === 2 &&
+        holidayImportState.holiday?.name === '元旦' &&
+        holidayImportState.workday?.type === 'workday' &&
+        holidayImportState.dayType === 'rest',
+      JSON.stringify({ holidayImportCount, ...holidayImportState })
+    );
+
+    await main.evaluate("window.__calendarTest.openSettings('schedule')");
+    await sleep(350);
+    await main.evaluate("document.querySelector('[data-action=\"reset-holidays\"]').click()");
+    await sleep(350);
+    const holidayResetState = await main.evaluate(`({
+      count: Object.keys(window.__app.getState().settings.holidayData).length,
+      info: window.Holidays.info('2027-01-01')
+    })`);
+    check(
+      '恢复内置节假日会清空自定义数据',
+      holidayResetState.count === 0 && holidayResetState.info === null,
+      JSON.stringify(holidayResetState)
+    );
+
+    await main.evaluate("document.querySelector('[data-workmode=\"night\"]').click()");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#shift-template-name').value = '夜班 21-06';
+      document.querySelector('[data-shift-save]').click();
+    })()`);
+    await sleep(350);
+    const templateId = await main.evaluate(
+      "window.__app.getState().settings.shiftTemplates[0]?.id"
+    );
+    await main.evaluate("document.querySelector('[data-workmode=\"split\"]').click()");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      const select = document.querySelector('#shift-template-select');
+      select.value = ${JSON.stringify(templateId || '')};
+      document.querySelector('[data-shift-apply]').click();
+    })()`);
+    await sleep(350);
+    const shiftTemplateState = await main.evaluate(`({
+      mode: window.__app.getState().settings.workHours.mode,
+      templates: window.__app.getState().settings.shiftTemplates.length
+    })`);
+    check(
+      '班次模板可以保存并一键切换',
+      shiftTemplateState.mode === 'night' && shiftTemplateState.templates === 1,
+      JSON.stringify(shiftTemplateState)
+    );
+    await main.evaluate(`(() => {
+      const select = document.querySelector('#shift-template-select');
+      select.value = ${JSON.stringify(templateId || '')};
+      document.querySelector('[data-shift-delete]').click();
+    })()`);
+    await sleep(300);
+    const templateDeleted = await main.evaluate(
+      "window.__app.getState().settings.shiftTemplates.length"
+    );
+    check('班次模板可以删除', templateDeleted === 0, `templates=${templateDeleted}`);
+    await main.evaluate("document.querySelector('[data-workmode=\"split\"]').click()");
+    await sleep(250);
+
+    await main.evaluate(`(() => {
+      document.querySelector('#batch-start').value = '2026-12-20';
+      document.querySelector('#batch-end').value = '2026-12-22';
+      document.querySelector('[data-batch-override="work"]').click();
+    })()`);
+    await sleep(400);
+    const batchWorkState = await main.evaluate(`(() => {
+      const overrides = window.__app.getState().settings.schedule.overrides;
+      return ['2026-12-20', '2026-12-21', '2026-12-22'].map((key) => overrides[key]);
+    })()`);
+    await main.evaluate("document.querySelector('[data-batch-override=\"clear\"]').click()");
+    await sleep(350);
+    const batchClearState = await main.evaluate(`(() => {
+      const overrides = window.__app.getState().settings.schedule.overrides;
+      return ['2026-12-20', '2026-12-21', '2026-12-22'].filter((key) => overrides[key]).length;
+    })()`);
+    check(
+      '特殊日期支持批量标记与清除',
+      batchWorkState.join(',') === 'work,work,work' && batchClearState === 0,
+      JSON.stringify({ batchWorkState, batchClearState })
+    );
+
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const today = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const fmt = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      const end = new Date(today);
+      end.setDate(end.getDate() + 12);
+      state.plans.push({
+        id: 'test-archive-plan', title: '归档验证计划', calendarId: 'work',
+        start: fmt(today), end: fmt(end), progress: 20, autoProgress: false,
+        archived: false, milestonesSeen: [], reminders: [], milestoneMessages: [], notes: ''
+      });
+      window.__app.render();
+    })()`);
+    await main.evaluate("document.querySelector('.settings-nav [data-section=plans]').click()");
+    await sleep(350);
+    await main.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.settings-plan-row')].find((node) =>
+        node.textContent.includes('归档验证计划')
+      );
+      row?.querySelector('[data-plan-archive]')?.click();
+    })()`);
+    await sleep(400);
+    const archivedState = await main.evaluate(`({
+      archived: window.__app.getState().plans.find((plan) => plan.id === 'test-archive-plan')?.archived,
+      active: window.Plans.active(window.__app.getState().plans).some((plan) => plan.id === 'test-archive-plan')
+    })`);
+    await main.evaluate("document.querySelector('[data-plan-filter=\"archived\"]').click()");
+    await sleep(350);
+    await main.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.settings-plan-row')].find((node) =>
+        node.textContent.includes('归档验证计划')
+      );
+      row?.querySelector('[data-plan-archive]')?.click();
+    })()`);
+    await sleep(350);
+    const unarchivedState = await main.evaluate(
+      "window.__app.getState().plans.find((plan) => plan.id === 'test-archive-plan')?.archived"
+    );
+    check(
+      '计划可以归档、筛选与恢复',
+      archivedState.archived === true &&
+        archivedState.active === false &&
+        unarchivedState === false,
+      JSON.stringify({ archivedState, unarchivedState })
+    );
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.plans = state.plans.filter((plan) => plan.id !== 'test-archive-plan');
+      window.__app.render();
+      document.querySelector('#settings-close')?.click();
+    })()`);
+    await sleep(250);
+
+    await main.evaluate(`window.__calendarTest.openPlanEditor(${JSON.stringify(createdPlanId)})`);
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#plan-progress').value = '40';
+      document.querySelector('#plan-progress').dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('[data-milestone="50"]').value = '这一程，稳稳地走。';
+      document.querySelector('#plan-save').click();
+    })()`);
+    await sleep(450);
+    await main.evaluate(`window.__calendarTest.openPlanEditor(${JSON.stringify(createdPlanId)})`);
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#plan-progress').value = '55';
+      document.querySelector('#plan-progress').dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('#plan-save').click();
+    })()`);
+    await sleep(450);
+    const customMilestoneToast = await main.evaluate(
+      "document.querySelector('#toast').textContent"
+    );
+    check(
+      '计划里程碑文案可以自定义',
+      customMilestoneToast.includes('这一程，稳稳地走。'),
+      customMilestoneToast
+    );
+
+    // 12. 1.2 新增能力：周数、标签色、ICS、搜索范围、历史导航、任务、农历、模板、快捷键、周期计划
+    await main.evaluate("window.__calendarTest.openSettings('display')");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="display.weekNumbers"]');
+      if (input && !input.checked) input.click();
+    })()`);
+    await sleep(350);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    await main.evaluate("window.__calendarTest.setView('month')");
+    await sleep(400);
+    const weekNumberState = await main.evaluate(`({
+      labels: document.querySelectorAll('.weeknum-column span').length,
+      first: document.querySelector('.weeknum-column span')?.textContent || '',
+      monthView: document.querySelector('.month-view')?.classList.contains('with-weeknums')
+    })`);
+    await main.evaluate("window.__calendarTest.setView('week')");
+    await sleep(350);
+    const weekBadge = await main.evaluate(
+      "document.querySelector('.weeknum-badge')?.textContent || ''"
+    );
+    check(
+      '月/周视图显示 ISO 周数',
+      weekNumberState.labels === 6 &&
+        /^W\d+$/.test(weekNumberState.first) &&
+        weekNumberState.monthView &&
+        /^W\d+$/.test(weekBadge),
+      JSON.stringify({ ...weekNumberState, weekBadge })
+    );
+    await main.evaluate("window.__calendarTest.openSettings('display')");
+    await sleep(250);
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="display.weekNumbers"]');
+      if (input && input.checked) input.click();
+    })()`);
+    await sleep(300);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    await main.evaluate("window.__calendarTest.setView('month')");
+    await sleep(300);
+
+    await main.evaluate("window.__calendarTest.openEventDialog()");
+    await sleep(300);
+    await main.evaluate(`(() => {
+      document.querySelector('#event-title').value = '标签颜色验证';
+      document.querySelector('#event-start-date').value = ${JSON.stringify(todayKey)};
+      document.querySelector('#event-end-date').value = ${JSON.stringify(todayKey)};
+      document.querySelector('#event-start-time').value = '16:00';
+      document.querySelector('#event-end-time').value = '17:00';
+      document.querySelector('.event-color-swatch[data-color="#FF9500"]').click();
+      document.querySelector('#event-save').click();
+    })()`);
+    await sleep(450);
+    const colorState = await main.evaluate(`(() => {
+      const event = window.__app.getState().events.find((item) => item.title === '标签颜色验证');
+      const chip = [...document.querySelectorAll('.event-chip')].find((node) =>
+        node.textContent.includes('标签颜色验证')
+      );
+      return { color: event?.color, chip: chip?.getAttribute('style') || '' };
+    })()`);
+    check(
+      '日程支持独立标签颜色',
+      colorState.color === '#FF9500' && colorState.chip.includes('#FF9500'),
+      JSON.stringify(colorState)
+    );
+
+    const icsSample = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'BEGIN:VEVENT',
+      'UID:ics-test-1',
+      'DTSTART:20261101T090000',
+      'DTEND:20261101T100000',
+      'SUMMARY:ICS 验证',
+      'LOCATION:线上',
+      'RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const icsParsed = await main.evaluate(
+      `window.__calendarTest.parseIcs(${JSON.stringify(icsSample)})`
+    );
+    const icsBuilt = await main.evaluate("window.__calendarTest.buildIcs({})");
+    const icsImported = await main.evaluate(
+      `window.__calendarTest.importIcs(${JSON.stringify(icsSample)}, 'work')`
+    );
+    const icsImportedState = await main.evaluate(`(() => {
+      const event = window.__app.getState().events.find((item) => item.uid === 'ics-test-1');
+      return { count: window.__app.getState().events.filter((item) => item.uid === 'ics-test-1').length, title: event?.title };
+    })()`);
+    check(
+      'iCalendar 可以导入与导出',
+      icsParsed.length === 1 &&
+        icsParsed[0].title === 'ICS 验证' &&
+        icsParsed[0].recurrence?.freq === 'weekly' &&
+        icsParsed[0].recurrence?.weekdays.join(',') === '1,3' &&
+        icsBuilt.includes('BEGIN:VEVENT') &&
+        icsImported === 1 &&
+        icsImportedState.count === 1,
+      JSON.stringify({ parsed: icsParsed[0], imported: icsImported, state: icsImportedState })
+    );
+
+    const searchCount = await main.evaluate(`(() => {
+      const input = document.querySelector('#search-input');
+      input.value = '重复验证';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`);
+    await sleep(350);
+    await main.evaluate(`(() => {
+      const from = document.querySelector('#search-from');
+      const to = document.querySelector('#search-to');
+      from.value = ${JSON.stringify(todayKey)};
+      to.value = ${JSON.stringify(todayKey)};
+      from.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await sleep(400);
+    const searchRangeCount = await main.evaluate(
+      "document.querySelectorAll('#search-results .search-item').length"
+    );
+    check(
+      '搜索支持日期范围并展开重复实例',
+      searchCount && searchRangeCount >= 1,
+      `results=${searchRangeCount}`
+    );
+    await main.evaluate(`(() => {
+      const input = document.querySelector('#search-input');
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+
+    await main.evaluate("window.__calendarTest.setView('month'); window.__calendarTest.setDate('2026-10-26')");
+    await main.evaluate("window.__calendarTest.setView('week')");
+    await main.evaluate("window.__calendarTest.setView('day')");
+    const backState = await main.evaluate("window.__calendarTest.goBack()");
+    const forwardState = await main.evaluate("window.__calendarTest.goForward()");
+    check(
+      '日历支持历史返回与前进',
+      backState.view === 'week' && forwardState.view === 'day',
+      JSON.stringify({ backState, forwardState })
+    );
+    await main.evaluate("window.__calendarTest.setView('month')");
+    await sleep(250);
+
+    const taskState = await main.evaluate(`(() => {
+      window.__calendarTest.addTask('任务验证', ${JSON.stringify(todayKey)});
+      const task = window.__calendarTest.tasksState().find((item) => item.title === '任务验证');
+      const row = [...document.querySelectorAll('.task-row')].find((node) =>
+        node.textContent.includes('任务验证')
+      );
+      const marker = Boolean(document.querySelector('.day-task-count'));
+      row?.click();
+      return {
+        id: task?.id,
+        done: window.__calendarTest.tasksState().find((item) => item.title === '任务验证')?.done,
+        marker
+      };
+    })()`);
+    check(
+      '轻量任务清单可以添加与完成',
+      Boolean(taskState.id) && taskState.done === true && taskState.marker,
+      JSON.stringify(taskState)
+    );
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.tasks = state.tasks.filter((task) => task.title !== '任务验证');
+      window.__app.render();
+    })()`);
+
+    const lunarState = await main.evaluate(`(() => {
+      const brief = Almanac.briefOf(new Date());
+      const solar = Almanac.solarForLunar(2026, 1, 1);
+      const start = new Date(solar);
+      start.setHours(9, 0, 0, 0);
+      const end = new Date(start.getTime() + 3600000);
+      const pad = (n) => String(n).padStart(2, '0');
+      const fmt = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      const event = {
+        start: fmt(start), end: fmt(end), allDay: false,
+        recurrence: { freq: 'lunar-yearly', interval: 1, lunarMonth: 1, lunarDay: 1, until: null, exceptions: [] }
+      };
+      const occurrences = Recurrence.expand(event, new Date(2026, 0, 1), new Date(2028, 0, 1));
+      const lunarMatches = occurrences.every((item) => {
+        const info = Almanac.lunarOf(parseLocal(item.start));
+        return info && info.monthNumber === 1 && info.day === 1;
+      });
+      return { chongSha: brief.chongSha || '', solar: Boolean(solar), count: occurrences.length, lunarMatches };
+    })()`);
+    check(
+      '黄历冲煞与农历生日重复可用',
+      /冲.+煞/.test(lunarState.chongSha) &&
+        lunarState.solar &&
+        lunarState.count >= 2 &&
+        lunarState.lunarMatches,
+      JSON.stringify(lunarState)
+    );
+
+    const templateState = await main.evaluate(`(() => {
+      window.__calendarTest.openEventDialog();
+      document.querySelector('#event-title').value = '模板验证';
+      document.querySelector('#event-start-time').value = '11:00';
+      document.querySelector('#event-end-time').value = '12:00';
+      document.querySelector('#event-template-save').click();
+      document.querySelector('#event-cancel').click();
+      window.__calendarTest.openEventDialog();
+      const options = [...document.querySelectorAll('#event-template-select option')].map((option) => option.textContent);
+      const template = [...document.querySelectorAll('#event-template-select option')].find((option) => option.textContent === '模板验证');
+      const pickerVisible = !document.querySelector('#event-template-picker').classList.contains('hidden');
+      if (template) {
+        document.querySelector('#event-template-select').value = template.value;
+        document.querySelector('#event-template-select').dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return {
+        options,
+        pickerVisible,
+        title: document.querySelector('#event-title').value,
+        start: document.querySelector('#event-start-time').value,
+        end: document.querySelector('#event-end-time').value
+      };
+    })()`);
+    check(
+      '日程可以保存为模板并快速套用',
+      templateState.pickerVisible &&
+        templateState.options.includes('模板验证') &&
+        templateState.title === '模板验证' &&
+        templateState.start === '11:00' &&
+        templateState.end === '12:00',
+      JSON.stringify(templateState)
+    );
+    await main.evaluate(`(() => {
+      const option = [...document.querySelectorAll('#event-template-select option')].find((item) => item.textContent === '模板验证');
+      if (option) {
+        document.querySelector('#event-template-select').value = option.value;
+        document.querySelector('#event-template-delete').click();
+      }
+      document.querySelector('#event-cancel').click();
+    })()`);
+
+    const shortcutState = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.settings.shortcuts.today = 'g';
+      window.__calendarTest.setView('week');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }));
+      const view = window.__calendarTest.stats().view;
+      state.settings.shortcuts.today = 't';
+      return { view };
+    })()`);
+    check('快捷键可以自定义', shortcutState.view === 'month', JSON.stringify(shortcutState));
+
+    const cycleState = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const today = new Date();
+      const end = new Date(today);
+      end.setDate(end.getDate() + 30);
+      const pad = (n) => String(n).padStart(2, '0');
+      const fmt = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      state.plans.push({
+        id: 'test-cycle-plan', title: '周期计划验证', calendarId: 'work',
+        start: fmt(today), end: fmt(end), progress: 10, autoProgress: false,
+        archived: false, repeat: 'quarterly', milestonesSeen: [], reminders: [], milestoneMessages: {}, notes: ''
+      });
+      window.__app.render();
+      return { start: fmt(today) };
+    })()`);
+    await main.evaluate("window.__calendarTest.openSettings('plans')");
+    await sleep(350);
+    await main.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.settings-plan-row')].find((node) =>
+        node.textContent.includes('周期计划验证')
+      );
+      row?.querySelector('[data-plan-next]')?.click();
+    })()`);
+    await sleep(400);
+    const cycleCreated = await main.evaluate(
+      "window.__app.getState().plans.filter((plan) => plan.title === '周期计划验证').length"
+    );
+    check(
+      '计划可以创建下一周期',
+      cycleCreated === 2,
+      `plans=${cycleCreated}`
+    );
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.plans = state.plans.filter((plan) => plan.title !== '周期计划验证');
+      window.__app.render();
+      document.querySelector('#settings-close')?.click();
+    })()`);
+    await sleep(250);
+
+    // 13. 小组件：尺寸、锁定、休息日同步
     await main.evaluate("window.__calendarTest.setView('month'); window.__calendarTest.openWidgetGallery();");
     await sleep(700);
     await main.evaluate("document.querySelector('.wg-toggle[data-type=\"month\"]').click()");
@@ -572,6 +1378,28 @@ async function main() {
     await widget.evaluate("window.desktop.widget.close()");
     await sleep(400);
 
+    await main.evaluate("document.querySelector('.wg-toggle[data-type=\"month\"]').click()");
+    await sleep(900);
+    await main.evaluate("document.querySelector('.wg-toggle[data-type=\"month\"]').click()");
+    await sleep(900);
+    const multiWidgetState = await main.evaluate(`(() => {
+      const card = [...document.querySelectorAll('.wg-card')].find((node) =>
+        node.querySelector('.wg-name')?.textContent.includes('月历')
+      );
+      return { meta: card?.querySelector('.wg-meta')?.textContent || '' };
+    })()`);
+    const widgetStore = JSON.parse(fs.readFileSync(path.join(USER_DATA, 'widgets.json'), 'utf8'));
+    const monthWidgets = widgetStore.filter((widgetItem) => widgetItem.type === 'month');
+    check(
+      '同一种小组件可以添加多个并记住显示器',
+      multiWidgetState.meta.includes('已添加 2 个') &&
+        monthWidgets.length === 2 &&
+        monthWidgets.every((widgetItem) => widgetItem.displayId !== undefined && widgetItem.displayId !== null),
+      JSON.stringify({ meta: multiWidgetState.meta, monthWidgets })
+    );
+    await main.evaluate("document.querySelector('.wg-remove[data-type=\"month\"]').click()");
+    await sleep(900);
+
     await main.evaluate("document.querySelector('.wg-toggle[data-type=\"today\"]').click()");
     await sleep(1000);
     const todayTarget = await waitFor(async () => {
@@ -602,6 +1430,26 @@ async function main() {
 
     const todayBase = await todayWidget.evaluate('window.__widgetTest.stats()');
     await todayWidget.shot('feature-widget-today.png');
+    await todayWidget.evaluate(
+      "window.desktop.widget.setAppearance({ theme: 'mist', opacity: 0.7, glass: 16 })"
+    );
+    await sleep(450);
+    const independentAppearance = await todayWidget.evaluate('window.__widgetTest.stats()');
+    check(
+      '小组件可以独立设置主题与透明度',
+      independentAppearance.theme === 'mist' &&
+        independentAppearance.alphaClass &&
+        Number(independentAppearance.alpha) < 0.75,
+      JSON.stringify({
+        theme: independentAppearance.theme,
+        alpha: independentAppearance.alpha,
+        alphaClass: independentAppearance.alphaClass
+      })
+    );
+    await todayWidget.evaluate(
+      "window.desktop.widget.setAppearance({ theme: 'inherit', opacity: null, glass: null })"
+    );
+    await sleep(350);
     check(
       '小组件可自由缩放并跟随主题',
       todayBase.sizePresets === 0 &&
@@ -642,7 +1490,7 @@ async function main() {
     todayWidget.close();
     await sleep(400);
 
-    // 11. 显示农历、宜忌、星座
+    // 14. 显示农历、宜忌、星座
     await main.evaluate("document.querySelector('#widget-close').click(); window.__calendarTest.openSettings('display')");
     await sleep(300);
     await main.evaluate(`(() => {
@@ -684,6 +1532,46 @@ async function main() {
     await main.shot('feature-about.png');
     await main.evaluate("document.querySelector('#settings-close').click()");
     await sleep(200);
+
+    const shardCount = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      for (let index = 0; index < 2001; index += 1) {
+        state.events.push({
+          id: 'shard-test-' + index, calendarId: 'work', title: '分片验证 ' + index,
+          start: '2026-01-15T09:00', end: '2026-01-15T10:00', allDay: false,
+          location: '', notes: '', recurrence: null, reminder: null
+        });
+      }
+      window.__app.saveState();
+      return state.events.length;
+    })()`);
+    await sleep(1400);
+    const shardStorePath = path.join(USER_DATA, 'calendar-data.json');
+    const shardDir = path.join(USER_DATA, 'events');
+    const shardedStore = JSON.parse(fs.readFileSync(shardStorePath, 'utf8'));
+    const shardFiles = fs.existsSync(shardDir)
+      ? fs.readdirSync(shardDir).filter((file) => /^\d{4}\.json$/.test(file))
+      : [];
+    check(
+      '大量日程自动分片存储',
+      shardCount > 2000 &&
+        Array.isArray(shardedStore.events) &&
+        shardedStore.events.length === 0 &&
+        shardFiles.length > 0,
+      JSON.stringify({ shardCount, mainEvents: shardedStore.events?.length, shardFiles })
+    );
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.events = state.events.filter((event) => !String(event.id).startsWith('shard-test-'));
+      window.__app.saveState();
+    })()`);
+    await sleep(1400);
+    const compactStore = JSON.parse(fs.readFileSync(shardStorePath, 'utf8'));
+    check(
+      '数据减少后分片会自动清理',
+      compactStore.events.length > 0 && !fs.existsSync(shardDir),
+      JSON.stringify({ mainEvents: compactStore.events.length, shards: fs.existsSync(shardDir) })
+    );
 
     console.log('errors:', JSON.stringify([...(main.errors || []), ...(widget.errors || [])]));
   } catch (error) {

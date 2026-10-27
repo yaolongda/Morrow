@@ -102,6 +102,8 @@ function createSeedData() {
       timed('personal', '体检预约', 15, 8.5, 10, { location: '市第一医院' }),
       timed('personal', '读书会 · 《芯片战争》', 20, 19, 21, { location: '西西弗书店' }),
     ],
+    tasks: [],
+    eventTemplates: [],
     plans: [
       {
         id: 'seed-plan-1',
@@ -137,6 +139,19 @@ function createSeedData() {
         celebrate: true,
         lunch: true,
         off: true,
+        animation: true,
+      },
+      holidayData: {},
+      shiftTemplates: [],
+      shortcuts: {
+        today: 't',
+        day: 'd',
+        week: 'w',
+        month: 'm',
+        year: 'y',
+        newPlan: 'p',
+        prev: 'ArrowLeft',
+        next: 'ArrowRight',
       },
       appearance: {
         theme: 'classic',
@@ -152,6 +167,7 @@ function createSeedData() {
         solarTerms: true,
         almanac: false,
         zodiac: false,
+        weekNumbers: false,
       },
       plans: {
         showInMonth: true,

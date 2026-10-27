@@ -89,9 +89,20 @@
     }
   }
 
-  function applyWidget(settings) {
-    const appearance = settings?.appearance || {};
+  function applyWidget(settings, override = null) {
+    const appearance = { ...(settings?.appearance || {}) };
     const root = document.documentElement;
+    if (override) {
+      if (['classic', 'paper', 'mist'].includes(override.theme)) {
+        appearance.theme = override.theme;
+      }
+      if (Number.isFinite(Number(override.opacity)) && override.opacity !== null) {
+        appearance.panelOpacity = Number(override.opacity);
+      }
+      if (Number.isFinite(Number(override.glass)) && override.glass !== null) {
+        appearance.glass = Number(override.glass);
+      }
+    }
     const theme = THEMES[appearance.theme] ? appearance.theme : 'classic';
     const accent = /^#[0-9a-f]{6}$/i.test(appearance.accent || '')
       ? appearance.accent
@@ -107,6 +118,10 @@
     root.style.setProperty(
       '--glass-blur',
       `${Math.min(36, Math.max(0, Number(appearance.glass) || 0))}px`
+    );
+    document.body.classList.toggle(
+      'widget-alpha',
+      Boolean(override && override.opacity !== null && override.opacity !== '')
     );
 
     const background = appearance.background || null;
