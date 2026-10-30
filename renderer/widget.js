@@ -152,6 +152,11 @@ function normalize(data) {
         lunar: display.lunar !== false,
         solarTerms: display.solarTerms !== false,
       },
+      widgets: {
+        smartSort: settings.widgets?.smartSort !== false,
+        breathing: settings.widgets?.breathing !== false,
+        suggestions: settings.widgets?.suggestions !== false,
+      },
       appearance:
         settings.appearance && typeof settings.appearance === 'object'
           ? settings.appearance
@@ -313,7 +318,7 @@ function dotsForDay(day) {
   return colors;
 }
 
-function monthGridHTML(selectable = false) {
+function monthGridHTML(selectable = false, summary = null) {
   const today = startOfDay(new Date());
   const start = startOfWeek(startOfMonth(monthCursor), weekStart());
   const cells = Array.from({ length: 42 }, (_, index) => addDays(start, index));
@@ -321,16 +326,25 @@ function monthGridHTML(selectable = false) {
     .map((day) => {
       const outside = day.getMonth() !== monthCursor.getMonth();
       const colors = outside ? [] : dotsForDay(day);
+      const key = ymd(day);
+      const load = summary?.loads?.[key] || 0;
+      const busiest = summary?.busiest?.key === key;
       const classes = ['w-day'];
       if (outside) classes.push('outside');
       if (sameDay(day, today)) classes.push('today');
       if (!outside && isRestDay(day)) classes.push('rest');
       if (!outside && isHalfDay(day)) classes.push('half');
       if (sameDay(day, selectedDate)) classes.push('selected');
+      if (!outside) classes.push(`load-${Math.min(3, load)}`);
+      if (busiest) classes.push('busiest');
       const title = `${day.getMonth() + 1}月${day.getDate()}日 ${WEEKDAY_SHORT[day.getDay()]}${
-        outside ? '' : isRestDay(day) ? ' · 休息' : isHalfDay(day) ? ' · 半天' : ' · 工作'
+        outside
+          ? ''
+          : ` · ${load ? `${load} 件安排` : '没有安排'}${
+              isRestDay(day) ? ' · 休息' : isHalfDay(day) ? ' · 半天' : ''
+            }`
       }`;
-      return `<button class="${classes.join(' ')}" data-date="${ymd(day)}" title="${title}${
+      return `<button class="${classes.join(' ')}" data-date="${key}" title="${title}${
         selectable ? ' · 单击选择' : ''
       }">
         <span class="num">${day.getDate()}</span>
@@ -342,10 +356,15 @@ function monthGridHTML(selectable = false) {
 }
 
 function renderMonth() {
-  content.className = 'widget-content';
+  const summary = Insight.month(state, monthCursor, new Date());
+  content.className = 'widget-content insight-month';
   content.innerHTML = `
     ${headerHTML({ title: `${monthCursor.getMonth() + 1}月`, sub: String(monthCursor.getFullYear()) })}
-    ${monthGridHTML(false)}`;
+    <div class="w-month-insight ${summary.tone}">
+      <strong>${esc(summary.headline)}</strong>
+      <span>${esc(summary.detail)}</span>
+    </div>
+    ${monthGridHTML(false, summary)}`;
 }
 
 function lunarLineForToday(today) {
@@ -389,50 +408,44 @@ function todayPlanNode() {
 
 function renderToday() {
   const today = new Date();
-  const events = eventsOnDay(today);
-  const available = Math.max(
-    1,
-    Math.min(7, Math.floor((window.innerHeight - 250) / 44))
-  );
-  const shown = events.slice(0, available);
-  const hiddenCount = events.length - shown.length;
-  const rest = isRestDay(today);
-  const half = isHalfDay(today);
-  const rows = shown
-    .map(
-      (event, index) => {
-        const calendar = calendarFor(event);
-        const start = parseLocal(event.start);
-        const end = parseLocal(event.end);
-        const time = event.allDay ? '全天' : `${formatTime(start)} – ${formatTime(end)}`;
-        return `<button class="w-event" style="--i:${index}" data-event-id="${esc(event.id)}" data-occurrence-date="${esc(event.occurrenceDate)}" title="${esc(event.title)}">
-        <span class="w-event-bar" style="--color:${eventColor(event)}"></span>
-        <span class="w-event-main">
-          <span class="w-event-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(event.title)}</span>
-          <span class="w-event-meta">${time}${event.location ? ` · ${esc(event.location)}` : ''}</span>
-        </span>
-      </button>`;
-      }
-    )
-    .join('');
+  const snap = Insight.today(state, today);
   const moon = lunarLineForToday(today);
-  const status = Workday.statusFor(today, workOptions());
-  const node = todayPlanNode();
   const greeting = Workday.greetingFor(today);
-  const holiday = Holidays.info(today);
-  const todayLabel = rest
+  const holiday = snap.holiday;
+  const todayLabel = snap.rest
     ? `今天 · ${holiday?.type === 'holiday' ? holiday.name : '休息'}`
-    : half
+    : snap.half
       ? '今天 · 半日'
       : holiday?.type === 'workday'
         ? '今天 · 补班'
         : '今天';
 
-  content.className = 'widget-content w-today-content';
+  const chips = snap.planNode
+    ? `<span class="w-chip w-chip-plan">今日节点 · ${esc(snap.planNode.reminder.text)}</span>`
+    : '';
+
+  const freeValue = !snap.enabled
+    ? ''
+    : snap.free.minutes < 30
+      ? '几乎没有'
+      : Insight.formatDuration(snap.free.minutes);
+  const freeLine = snap.enabled
+    ? `<div class="w-insight-line w-free-line">
+        <span class="w-insight-key">自己的时间</span>
+        <span class="w-insight-value">${esc(freeValue)}${
+          snap.suggestion && state.settings.widgets?.suggestions !== false
+            ? `<em class="w-suggestion-inline"> · ${esc(snap.suggestion)}</em>`
+            : ''
+        }</span>
+      </div>`
+    : '';
+
+  content.className = 'widget-content w-today-content insight-today';
+  content.dataset.rhythm = snap.rhythmState;
   content.innerHTML = `
     <div class="w-today-top">
       <button class="w-today-caption" data-action="open-day" title="在日历中打开今天">
-        <span class="w-today-label ${rest ? 'is-rest' : half ? 'is-half' : ''}">${esc(
+        <span class="w-today-label ${snap.rest ? 'is-rest' : snap.half ? 'is-half' : ''}">${esc(
           todayLabel
         )}</span>
         <span class="w-today-date">${today.getDate()}</span>
@@ -441,92 +454,177 @@ function renderToday() {
         <strong>${today.getFullYear()}年</strong>${today.getMonth() + 1}月 · ${WEEKDAY_FULL[today.getDay()]}
         ${moon ? `<span class="w-today-moon">${esc(moon)}</span>` : ''}
         <span class="w-greeting">${esc(greeting.detail)}</span>
+        ${chips ? `<span class="w-chips">${chips}</span>` : ''}
       </div>
     </div>
-    ${worklineHTML(status)}
-    ${
-      node
-        ? `<div class="w-node" title="在日历中打开计划">
-            <span class="w-node-kicker">今日节点</span>
-            <span class="w-node-text">${esc(node.plan.title)} · ${esc(node.reminder.text)}</span>
-          </div>`
-        : ''
-    }
-    <div class="w-divider"></div>
-    <div class="w-agenda">
-      ${rows || '<div class="w-empty">今天没有日程，给自己留一点空白。</div>'}
-      ${hiddenCount > 0 ? `<button class="w-more" data-action="open-day">还有 ${hiddenCount} 个日程</button>` : ''}
+    <div class="w-today-insight">
+      <div class="w-rhythm ${snap.rhythmState} ${
+        snap.breathing ? 'is-breathing' : ''
+      }">
+        <span class="w-rhythm-dot" aria-hidden="true"></span>
+        <strong class="w-rhythm-headline">${esc(snap.headline)}</strong>
+        ${snap.nearOff ? '<span class="w-rhythm-spark" aria-hidden="true"></span>' : ''}
+      </div>
+      <div class="w-insight-line w-next-line">
+        <span class="w-insight-key">下一件</span>
+        <span class="w-insight-value">${esc(snap.nextLine)}</span>
+      </div>
+      ${freeLine}
     </div>
     <div class="w-today-footer"><button class="w-open-btn" data-action="open-day">在日历中打开</button></div>`;
 }
 
-function refreshWorkline() {
+function refreshTodayRhythm() {
   if (widgetType !== 'today') return;
-  const current = document.querySelector('.w-workline');
-  const status = Workday.statusFor(new Date(), workOptions());
-  if (!status) {
-    if (current) current.remove();
-    return;
+  render();
+}
+
+function planLineHTML(plan, now = new Date()) {
+  if (!plan) {
+    return `<div class="w-plan-line w-plan-empty">还没有进行中的计划</div>`;
   }
-  if (current) current.outerHTML = worklineHTML(status);
-  else {
-    const top = document.querySelector('.w-today-top');
-    if (top) top.insertAdjacentHTML('afterend', worklineHTML(status));
-  }
+  const milestone = plan.nextMilestone ? `下一个 ${plan.nextMilestone}%` : '接近完成';
+  return `<div class="w-plan-line ${plan.behind ? 'is-behind' : ''}">
+    <span class="w-plan-main">
+      <strong>${esc(plan.plan.title)}</strong>
+      <span class="w-plan-type">${esc(plan.type)}</span>
+      ${plan.behind ? '<span class="w-plan-behind">进度落后</span>' : ''}
+    </span>
+    <span class="w-plan-progress">完成 ${plan.completion}% · 时间 ${plan.timeProgress}%</span>
+    <span class="w-plan-next">${milestone}</span>
+    <span class="w-plan-track" aria-hidden="true">
+      <i class="w-plan-time" style="width:${plan.timeProgress}%"></i>
+      <i class="w-plan-done ${plan.behind ? 'behind' : ''}" style="width:${plan.completion}%"></i>
+    </span>
+  </div>`;
 }
 
 function renderUpcoming() {
-  const limit = Math.max(2, Math.min(8, Math.floor((window.innerHeight - 120) / 50)));
-  const events = upcomingEvents(limit);
-  const rows = events
-    .map((event, index) => {
-      const start = parseLocal(event.start);
-      const calendar = calendarFor(event);
-      const time = event.allDay
-        ? '全天'
-        : `${formatTime(start)} – ${formatTime(parseLocal(event.end))}`;
-      return `<button class="w-up-row" style="--i:${index}" data-event-id="${esc(event.id)}" data-occurrence-date="${esc(event.occurrenceDate)}" title="${esc(event.title)}">
+  const now = new Date();
+  const limit = Math.max(2, Math.min(3, Math.floor((window.innerHeight - 150) / 58)));
+  const smart = state.settings.widgets?.smartSort !== false;
+  const ranked = Insight.upcoming(state, now, Math.max(limit, 6));
+  let items = ranked.items.slice(0, limit);
+  if (!smart) {
+    items = [...ranked.all]
+      .sort((a, b) => a.startDate - b.startDate || String(a.id).localeCompare(String(b.id)))
+      .slice(0, limit);
+  }
+
+  const hero = items[0] || null;
+  const rest = items.slice(1);
+  const heroAttrs = hero
+    ? hero.kind === 'plan'
+      ? `data-plan-id="${esc(hero.plan.plan.id)}"`
+      : `data-event-id="${esc(hero.id)}" data-occurrence-date="${esc(hero.occurrenceDate)}"`
+    : '';
+  const heroHTML = hero
+    ? `<button class="w-up-hero" ${heroAttrs} title="${esc(`${hero.title} · ${hero.reason}`)}">
+        <span class="w-up-hero-date">
+          <strong>${Insight.formatDayShort(hero.startDate, now)}</strong>
+          <span>${hero.kind === 'plan' ? '节点' : hero.allDay ? '全天' : Insight.formatClock(hero.startDate)}</span>
+        </span>
+        <span class="w-up-hero-main">
+          <span class="w-up-hero-title">${
+            hero.kind === 'event' && Recurrence.isRecurring(hero)
+              ? '<span class="w-repeat" aria-hidden="true">↻</span>'
+              : ''
+          }${esc(hero.title)}</span>
+          <span class="w-up-hero-meta">${esc(
+            hero.kind === 'plan'
+              ? `完成 ${hero.plan.completion}% · 时间 ${hero.plan.timeProgress}%`
+              : hero.allDay
+                ? '全天'
+                : `${Insight.formatClock(hero.startDate)} – ${Insight.formatClock(hero.endDate)}`
+          )}${hero.kind === 'event' && hero.location ? ` · ${esc(hero.location)}` : ''}</span>
+        </span>
+        <span class="w-reason ${esc(hero.reasonKind)}">${esc(hero.reason)}</span>
+      </button>`
+    : '';
+
+  const rows = rest
+    .map(
+      (item, index) => `<button class="w-up-row" style="--i:${index}" ${
+        item.kind === 'plan'
+          ? `data-plan-id="${esc(item.plan.plan.id)}"`
+          : `data-event-id="${esc(item.id)}" data-occurrence-date="${esc(item.occurrenceDate)}"`
+      } title="${esc(`${item.title} · ${item.reason}`)}">
         <span class="w-up-date">
-          <span class="w-up-day">${start.getDate()}</span>
-          <span class="w-up-month">${start.getMonth() + 1}月 · ${WEEKDAY_SHORT[start.getDay()]}</span>
+          <span class="w-up-day">${item.startDate.getDate()}</span>
+          <span class="w-up-month">${item.startDate.getMonth() + 1}月 · ${
+            WEEKDAY_SHORT[item.startDate.getDay()]
+          }</span>
         </span>
         <span class="w-up-main">
-          <span class="w-up-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(event.title)}</span>
-          <span class="w-up-meta">
-            <span class="w-up-dot" style="--color:${eventColor(event)}"></span>
-            ${esc(calendar.name)}${event.location ? ` · ${esc(event.location)}` : ''}
-          </span>
+          <span class="w-up-title">${
+            item.kind === 'event' && Recurrence.isRecurring(item)
+              ? '<span class="w-repeat" aria-hidden="true">↻</span>'
+              : ''
+          }${esc(item.title)}</span>
+          <span class="w-up-reason ${esc(item.reasonKind)}">${esc(item.reason)}</span>
         </span>
-        <span class="w-up-time">${time}</span>
-      </button>`;
-    })
+        <span class="w-up-time">${
+          item.kind === 'plan'
+            ? '节点'
+            : item.allDay
+              ? '全天'
+              : Insight.formatClock(item.startDate)
+        }</span>
+      </button>`
+    )
     .join('');
 
-  content.className = 'widget-content';
-  content.innerHTML = `
-    ${headerHTML({ title: '即将到来', sub: `${events.length} 个日程`, nav: false })}
-    <div class="w-upcoming">
-      ${rows || `<div class="w-upcoming-empty"><span class="big">✓</span><span>近期没有日程</span></div>`}
+  const emptyHTML = `<div class="w-upcoming-empty">
+      <strong>接下来 30 天没有安排</strong>
+      <span>可以留白，也可以提前放一件想做的事。</span>
     </div>`;
+
+  content.className = 'widget-content insight-upcoming';
+  content.innerHTML = `
+    ${headerHTML({
+      title: '即将到来',
+      sub: smart ? '按需要提前知道的程度排序' : '按时间排序',
+      nav: false,
+    })}
+    <div class="w-upcoming">
+      ${heroHTML || emptyHTML}
+      ${rows ? `<div class="w-up-list">${rows}</div>` : ''}
+    </div>
+    ${planLineHTML(ranked.plan, now)}`;
 }
 
 function renderMonthAgenda() {
-  const today = startOfDay(new Date());
-  const events = eventsOnDay(selectedDate);
-  const rows = events
-    .map((event) => {
-      const calendar = calendarFor(event);
+  const now = new Date();
+  const today = startOfDay(now);
+  const summary = Insight.month(state, monthCursor, now);
+  const day = Insight.agenda(state, selectedDate, now);
+  const rows = day.events
+    .map((event, index) => {
       const start = parseLocal(event.start);
       const end = parseLocal(event.end);
       const time = event.allDay ? '全天' : `${formatTime(start)} – ${formatTime(end)}`;
-      return `<button class="w-event" data-event-id="${esc(event.id)}" data-occurrence-date="${esc(event.occurrenceDate)}" title="${esc(event.title)}">
+      return `<button class="w-event" style="--i:${index}" data-event-id="${esc(
+        event.id
+      )}" data-occurrence-date="${esc(event.occurrenceDate)}" title="${esc(event.title)}">
         <span class="w-event-bar" style="--color:${eventColor(event)}"></span>
         <span class="w-event-main">
-          <span class="w-event-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(event.title)}</span>
+          <span class="w-event-title">${Recurrence.isRecurring(event) ? '<span class="w-repeat" aria-hidden="true">↻</span>' : ''}${esc(
+            event.title
+          )}</span>
           <span class="w-event-meta">${time}${event.location ? ` · ${esc(event.location)}` : ''}</span>
         </span>
       </button>`;
     })
+    .join('');
+
+  const taskRows = day.tasks
+    .map(
+      (task) => `<button class="w-task-row" data-action="open-tasks" title="打开任务">
+        <span class="w-task-box" aria-hidden="true"></span>
+        <span class="w-task-title">${esc(task.title)}</span>
+        <span class="w-task-due">任务</span>
+      </button>`
+    )
     .join('');
 
   const relation = sameDay(selectedDate, today)
@@ -538,18 +636,34 @@ function renderMonthAgenda() {
         : WEEKDAY_FULL[selectedDate.getDay()];
   const selectedRest = isRestDay(selectedDate);
   const selectedHalf = isHalfDay(selectedDate);
+  const dayTasks = (state.tasks || []).filter((task) => task.due === ymd(selectedDate));
+  const doneTasks = dayTasks.filter((task) => task.done).length;
+  const taskSummary = dayTasks.length
+    ? `任务 ${doneTasks}/${dayTasks.length}`
+    : '';
+  const emptyHTML = day.empty
+    ? `<div class="w-large-empty">
+        <strong>这一天没有安排</strong>
+        <span>可以留白，也可以双击日期放一件小事。</span>
+      </div>`
+    : '';
 
-  content.className = 'widget-content w-large-content';
+  content.className = 'widget-content w-large-content insight-agenda';
   content.innerHTML = `
     ${headerHTML({ title: `${monthCursor.getMonth() + 1}月`, sub: String(monthCursor.getFullYear()) })}
-    <div class="w-large-month">${monthGridHTML(true)}</div>
+    <div class="w-large-month">${monthGridHTML(true, summary)}</div>
     <div class="w-large-agenda">
       <div class="w-large-head">
         <span class="w-large-day-title">${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日 ${WEEKDAY_FULL[selectedDate.getDay()]}</span>
-        <span class="w-large-day-sub">${selectedRest ? '休息日' : selectedHalf ? '半日' : relation}</span>
+        <span class="w-large-day-sub">${selectedRest ? '休息日' : selectedHalf ? '半日' : relation}${
+          taskSummary ? ` · ${esc(taskSummary)}` : ''
+        }</span>
       </div>
+      <div class="w-large-summary">${esc(day.headline)}</div>
       <div class="w-large-list">
-        ${rows || '<div class="w-large-empty">这一天没有日程</div>'}
+        ${rows}
+        ${taskRows ? `<div class="w-task-list">${taskRows}</div>` : ''}
+        ${!rows && !taskRows ? emptyHTML : ''}
       </div>
       <div class="w-large-foot">
         <button class="w-open-btn" data-action="open-selected">在日历中打开</button>
@@ -578,6 +692,11 @@ function keepSelectedInMonth() {
 }
 
 content.addEventListener('click', (event) => {
+  const planNode = event.target.closest('[data-plan-id]');
+  if (planNode) {
+    openMain({ action: 'open-plan', planId: planNode.dataset.planId });
+    return;
+  }
   const eventNode = event.target.closest('[data-event-id]');
   if (eventNode) {
     openMain({
@@ -614,6 +733,8 @@ content.addEventListener('click', (event) => {
     openMain({ date: ymd(selectedDate), view: 'day' });
   } else if (action === 'open-selected') {
     openMain({ date: ymd(selectedDate), view: 'day' });
+  } else if (action === 'open-tasks') {
+    openMain({ action: 'open-tasks' });
   }
 });
 
@@ -930,7 +1051,7 @@ function stopParticles() {
 }
 
 setInterval(() => {
-  refreshWorkline();
+  refreshTodayRhythm();
   maybeCelebrate();
 }, 20000);
 
@@ -1069,9 +1190,81 @@ window.__widgetTest = {
       weekdayFirst: document.querySelector('.w-weekdays span')?.textContent || '',
       eventRows: document.querySelectorAll('[data-event-id]').length,
       monthTitle: document.querySelector('.w-title')?.textContent?.trim() || '',
-      workline: document.querySelector('.w-workline')?.textContent?.trim() || '',
+      workline: document.querySelector('.w-rhythm-headline')?.textContent?.trim() || '',
+      headline: document.querySelector('.w-rhythm-headline')?.textContent?.trim() || '',
+      nextLine: document.querySelector('.w-next-line .w-insight-value')?.textContent?.trim() || '',
+      freeLine: document.querySelector('.w-free-line .w-insight-value')?.textContent?.trim() || '',
+      suggestion: document.querySelector('.w-suggestion-inline')?.textContent?.trim() || '',
+      monthInsight: document.querySelector('.w-month-insight strong')?.textContent?.trim() || '',
+      planLine: document.querySelector('.w-plan-line')?.textContent?.trim() || '',
+      reasons: [...document.querySelectorAll('.w-reason')].map((node) => node.textContent.trim()),
+      breathing: Boolean(document.querySelector('.w-rhythm.is-breathing')),
+      conclusionCount: [
+        '.w-rhythm-headline',
+        '.w-next-line .w-insight-value',
+        '.w-free-line .w-insight-value',
+        '.w-month-insight strong',
+      ].filter((selector) => document.querySelector(selector)).length,
       resizeGrip: Boolean(document.getElementById('resize-grip')),
       sizePresets: document.querySelectorAll('[data-action^="size-"]:not([data-action="size-default"])').length,
     };
+  },
+  insight() {
+    const today = Insight.today(state, new Date());
+    return {
+      headline: today.headline,
+      nextLine: today.nextLine,
+      freeMinutes: today.free.minutes,
+      freeLabel: today.free.label,
+      suggestion: today.suggestion,
+      rhythmState: today.rhythmState,
+      nearOff: today.nearOff,
+      breathing: today.breathing,
+      taskLine: today.taskLine,
+      planNode: today.planNode ? today.planNode.reminder.text : '',
+    };
+  },
+  insightAt(iso, overrides = {}) {
+    const settings = {
+      ...state.settings,
+      workHours: {
+        ...Workday.normalize(state.settings.workHours),
+        ...(overrides.workHours || {}),
+      },
+      widgets: {
+        ...(state.settings.widgets || {}),
+        ...(overrides.widgets || {}),
+      },
+    };
+    const today = Insight.today({ ...state, settings }, new Date(iso));
+    return {
+      headline: today.headline,
+      detail: today.detail,
+      nextLine: today.nextLine,
+      freeMinutes: today.free.minutes,
+      freeLabel: today.free.label,
+      suggestion: today.suggestion,
+      rhythmState: today.rhythmState,
+      nearOff: today.nearOff,
+      breathing: today.breathing,
+      conclusionCount: 0,
+    };
+  },
+  upcomingInsight() {
+    const ranked = Insight.upcoming(state, new Date(), 8);
+    const smart = state.settings.widgets?.smartSort !== false;
+    const items = smart
+      ? ranked.items
+      : [...ranked.all].sort(
+          (a, b) => a.startDate - b.startDate || String(a.id).localeCompare(String(b.id))
+        );
+    return items.map((item) => ({
+      title: item.title,
+      reason: item.reason,
+      reasonKind: item.reasonKind,
+      conflict: item.conflict,
+      prep: item.prep,
+      score: item.score,
+    }));
   },
 };

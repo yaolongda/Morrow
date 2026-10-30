@@ -568,7 +568,7 @@
     <h2>下载与起步</h2>
     <h3>下载安装包</h3>
     <p>前往本仓库的 <strong>Releases</strong> 页面，下载最新的 Windows 安装包：</p>
-    <pre><code>朝暮-Morrow-Setup-1.2.0.exe</code></pre>
+    <pre><code>朝暮-Morrow-Setup-1.2.1.exe</code></pre>
     <p>系统要求 Windows 10 / 11（x64）。默认按当前用户安装，无需管理员权限；会创建桌面与开始菜单快捷方式，可在「设置 → 应用」中卸载。安装包未做代码签名，首次运行若出现 SmartScreen，请选择「更多信息 → 仍要运行」。</p>
     <div class="split">
       <div>
@@ -583,7 +583,7 @@ npm install</code></pre>
       <div>
         <h3>构建</h3>
         <pre><code>npm run dist
-# dist\朝暮-Morrow-Setup-1.2.0.exe
+# dist\朝暮-Morrow-Setup-1.2.1.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe</code></pre>
@@ -671,7 +671,8 @@ npm run build:portable
       <li>小组件跟随全局主题、强调色、字体、面板透明度、毛玻璃与背景图片。</li>
       <li>可<strong>锁定位置与尺寸</strong>，固定后不会误移动；锁定状态会保留。</li>
       <li>默认不强制置顶，留在普通窗口后面；点击图钉可固定在其它窗口上方。</li>
-      <li>休息日、半天与法定节假日会在小组件中柔和高亮；今日小组件显示农历、节气、上下班倒计时，并在下班时播放庆祝动画。</li>
+      <li>休息日、半天与法定节假日会在小组件中柔和高亮；今日小组件显示农历、节气、上下班倒计时、下一件事与今天剩余的自由时间，并在下班时播放庆祝动画。</li>
+      <li>临近下班 1 小时内只有极轻微的呼吸动画；智能排序、呼吸与节奏建议都可在设置中关闭。</li>
       <li>大号小组件单击日期切换下方议程；点击日期或日程会打开主日历对应位置。</li>
     </ul>
     <figure class="figure">
@@ -711,6 +712,10 @@ npm run build:portable
       <div class="feature">
         <h4>小组件多开</h4>
         <p>同类型可添加多个，每个独立主题 / 不透明度 / 毛玻璃，并记住显示器。</p>
+      </div>
+      <div class="feature">
+        <h4>小组件结论化</h4>
+        <p>四个组件共用一套结论引擎：今天回答“还要熬多久 / 现在干嘛”，即将到来按需提前知道的程度排序，月历回答忙闲，议程回答具体安排。</p>
       </div>
       <div class="feature">
         <h4>数据分片</h4>
@@ -842,7 +847,7 @@ npm run build:portable
   <section class="card" id="notes">
     <p class="kicker">VERIFICATION &amp; LIMITS</p>
     <h2>验证与已知边界</h2>
-    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程三分支编辑、日程提醒与主进程调度、全天折叠、撤销重做、回收站、节假日 JSON 导入、班次模板、批量特殊日期、计划自动进度/归档/自定义里程碑与提醒节点、iCalendar、任务、模板、标签色、周数、历史导航、小组件多开/独立外观、数据分片、小组件自由缩放/主题/自适应/庆祝动画、配置导入导出与重启恢复等 <strong>92 项检查</strong>。</p>
+    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程三分支编辑、日程提醒与主进程调度、全天折叠、撤销重做、回收站、节假日 JSON 导入、班次模板、批量特殊日期、计划自动进度/归档/自定义里程碑与提醒节点、iCalendar、任务、模板、标签色、周数、历史导航、小组件多开/独立外观、数据分片、小组件结论化/时段节奏/智能排序/双进度/空状态、小组件自由缩放/主题/自适应/庆祝动画、配置导入导出与重启恢复等 <strong>98 项检查</strong>。</p>
     <pre><code>node tools/e2e.js
 node tools/features-test.js
 node tools/widget-restart-test.js</code></pre>

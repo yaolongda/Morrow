@@ -18,7 +18,7 @@
 Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 ```text
-朝暮-Morrow-Setup-1.2.0.exe
+朝暮-Morrow-Setup-1.2.1.exe
 ```
 
 - Windows 10 / 11, x64
@@ -112,6 +112,17 @@ Month, Today, Upcoming, and Month & Agenda.
 - The Today widget shows lunar date, solar term, work countdown, and plays an off-work celebration.
 - Click a date or event to open it in the main calendar.
 
+### How the widgets answer questions
+
+All four widgets share one conclusion engine instead of interpreting data separately:
+
+- **Today** answers "how long until I'm off, and what now": current rhythm, next commitment, remaining personal time, and an optional quiet suggestion.
+- **Upcoming** answers "what's next, and where is the plan": ranked by conflict risk, preparation, plan nodes and proximity, with a hover reason and dual plan progress.
+- **Month** answers "how busy is this month": one summary line plus density and a busiest-day marker.
+- **Month & Agenda** answers "what's actually scheduled": the selected day's timeline, task count and empty state.
+
+Time formats, conflict labels, task counts and progress language are identical across widgets. Within the last hour of work the Today widget breathes very slightly; there is no other persistent animation. Smart sorting, breathing and suggestions can each be turned off in Settings → Display → Widgets.
+
 ![Off-work celebration](docs/widget-celebration.png)
 
 ### More in 1.2
@@ -176,7 +187,7 @@ Build:
 
 ```powershell
 npm run dist
-# dist\朝暮-Morrow-Setup-1.2.0.exe
+# dist\朝暮-Morrow-Setup-1.2.1.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe
@@ -211,7 +222,7 @@ npm run test:features
 npm run test:widgets
 ```
 
-92 automated checks: 23 core, 65 feature, 4 widget-restart. Coverage includes work/rest presets, statutory holidays and holiday JSON import, shift hours and celebration intensity, shift templates, batch date overrides, recurring events and lunar birthdays, event reminders and main-process scheduling, all-day collapse, undo/redo, recycle bin, plan auto-progress / archiving / cycles / custom milestones, iCalendar, tasks, templates, tag colors, week numbers, history navigation, widget multi-instance / per-widget appearance / free resize / celebration animation, sharded storage, config import/export and restart persistence.
+98 automated checks: 23 core, 71 feature, 4 widget-restart. Coverage includes work/rest presets, statutory holidays and holiday JSON import, shift hours and celebration intensity, shift templates, batch date overrides, recurring events and lunar birthdays, event reminders and main-process scheduling, all-day collapse, undo/redo, recycle bin, plan auto-progress / archiving / cycles / custom milestones, iCalendar, tasks, templates, tag colors, week numbers, history navigation, widget multi-instance / per-widget appearance / conclusion-driven rhythm / smart sorting / dual progress / empty states / celebration animation, sharded storage, config import/export and restart persistence.
 
 ## Known limitations
 

@@ -211,6 +211,7 @@ let state = {
     holidayData: {},
     shiftTemplates: [],
     shortcuts: { ...DEFAULT_SHORTCUTS },
+    widgets: { smartSort: true, breathing: true, suggestions: true },
     appearance: { ...DEFAULT_APPEARANCE },
     display: { ...DEFAULT_DISPLAY },
     plans: { ...DEFAULT_PLAN_SETTINGS },
@@ -277,6 +278,15 @@ function normalizeShortcuts(input) {
     }
   }
   return result;
+}
+
+function normalizeWidgetSettings(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    smartSort: source.smartSort !== false,
+    breathing: source.breathing !== false,
+    suggestions: source.suggestions !== false,
+  };
 }
 
 function normalizeEventReminder(input) {
@@ -622,6 +632,7 @@ function normalizeState(data) {
       holidayData: normalizeHolidayData(sourceSettings.holidayData),
       shiftTemplates: normalizeShiftTemplates(sourceSettings.shiftTemplates),
       shortcuts: normalizeShortcuts(sourceSettings.shortcuts),
+      widgets: normalizeWidgetSettings(sourceSettings.widgets),
       appearance,
       display,
       plans: planSettings,
@@ -663,6 +674,7 @@ function snapshotState() {
         holidayData: state.settings.holidayData,
         shiftTemplates: state.settings.shiftTemplates,
         shortcuts: state.settings.shortcuts,
+        widgets: state.settings.widgets,
         display: state.settings.display,
         plans: state.settings.plans,
       },
@@ -697,6 +709,7 @@ function restoreHistory(direction) {
       'holidayData',
       'shiftTemplates',
       'shortcuts',
+      'widgets',
       'display',
       'plans',
     ]) {
@@ -945,6 +958,15 @@ function renderDayBrief() {
       <span class="brief-work-detail">${esc(workStatus.detail)}</span>
     </div>`);
   }
+  if (window.Insight) {
+    const insight = Insight.today(state, today);
+    if (insight.enabled) {
+      parts.push(`<div class="brief-insight">
+        <span class="brief-insight-free">${esc(insight.free.label)}</span>
+        ${insight.suggestion ? `<span class="brief-insight-suggestion">${esc(insight.suggestion)}</span>` : ''}
+      </div>`);
+    }
+  }
 
   el.classList.remove('hidden');
   el.innerHTML = parts.join('');
@@ -1057,9 +1079,12 @@ function renderPlanList() {
     .map((plan) => {
       const meta = Plans.classify(plan);
       const color = Plans.colorFor(plan, state);
-      const progress = Plans.effectiveProgress(plan);
+      const info = window.Insight ? Insight.planInfo(state, plan) : null;
+      const progress = info ? info.completion : Plans.effectiveProgress(plan);
       const node = Plans.planNodeToday(plan);
-      return `<button class="side-plan" data-plan-id="${esc(plan.id)}" style="--plan-color:${color}">
+      return `<button class="side-plan" data-plan-id="${esc(plan.id)}" style="--plan-color:${color}" title="完成 ${progress}%${
+        info ? ` · 时间 ${info.timeProgress}%` : ''
+      }${info?.behind ? ' · 进度落后' : ''}">
         <span class="side-plan-top">
           <span class="side-plan-title">${esc(plan.title)}${
             node ? '<span class="side-plan-node">今日节点</span>' : ''
@@ -1069,7 +1094,7 @@ function renderPlanList() {
         <span class="side-plan-track"><i style="width:${progress}%"></i></span>
         <span class="side-plan-meta">${meta.name} · ${plan.end.slice(5).replace('-', '/')} 截止${
           plan.autoProgress ? ' · 自动' : ''
-        }</span>
+        }${info?.behind ? ' · 进度落后' : ''}</span>
       </button>`;
     })
     .join('');
@@ -1098,6 +1123,13 @@ function taskDueLabel(task) {
 function renderTaskList() {
   const list = $('#task-list');
   if (!list) return;
+  const today = ymd(new Date());
+  const todayAll = (state.tasks || []).filter((task) => task.due === today);
+  const doneToday = todayAll.filter((task) => task.done).length;
+  const count = $('#task-count');
+  if (count) {
+    count.textContent = todayAll.length ? `任务 ${doneToday}/${todayAll.length}` : '';
+  }
   const tasks = todayTasks().slice(0, 5);
   list.innerHTML = tasks.length
     ? tasks
@@ -4173,6 +4205,21 @@ function handleNavigation(payload) {
   if (payload.action === 'new-event') {
     closeAllPopups();
     openEventDialog({});
+    return;
+  }
+  if (payload.action === 'open-tasks') {
+    closeAllPopups();
+    openTaskOverlay();
+    return;
+  }
+  if (payload.action === 'open-plan' && payload.planId) {
+    closeAllPopups();
+    openPlanEditor(payload.planId);
+    return;
+  }
+  if (payload.action === 'open-settings') {
+    closeAllPopups();
+    openSettings('general');
     return;
   }
 

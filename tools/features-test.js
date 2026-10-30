@@ -1410,21 +1410,25 @@ async function main() {
     await waitFor(() => todayWidget.evaluate('Boolean(window.__widgetTest)'));
     await sleep(500);
     const todayWidgetState = await todayWidget.evaluate(`(() => {
-      const rows = Array.from(document.querySelectorAll('[data-event-id]'));
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const todayKey = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+      const stats = window.__widgetTest.stats();
+      const insight = window.__widgetTest.insight();
       return {
-        rows: rows.length,
-        todayOccurrence: rows.some((row) => row.dataset.occurrenceDate === todayKey),
-        recurringVisible: rows.some((row) => row.title.includes('重复验证')),
+        headline: stats.headline,
+        nextLine: stats.nextLine,
+        freeLine: stats.freeLine,
+        freeMinutes: insight.freeMinutes,
+        rhythmState: insight.rhythmState,
+        suggestion: insight.suggestion,
+        conclusionCount: stats.conclusionCount,
       };
     })()`);
     check(
-      '今天小组件展开重复日程',
-      todayWidgetState.rows > 0 &&
-        todayWidgetState.todayOccurrence &&
-        todayWidgetState.recurringVisible,
+      '今天小组件给出今日节奏结论',
+      todayWidgetState.headline.length > 0 &&
+        todayWidgetState.nextLine.length > 0 &&
+        (todayWidgetState.freeLine.length > 0 || todayWidgetState.rhythmState === 'no-hours') &&
+        todayWidgetState.freeMinutes >= 0 &&
+        todayWidgetState.conclusionCount >= 2,
       JSON.stringify(todayWidgetState)
     );
 
@@ -1486,8 +1490,230 @@ async function main() {
     await todayWidget.evaluate("window.__widgetTest.dismissCelebration()");
     await sleep(600);
 
+    const rhythmStates = await todayWidget.evaluate(`(() => {
+      const cases = [
+        ['2026-11-02T08:00:00', 'before'],
+        ['2026-11-02T10:00:00', 'morning'],
+        ['2026-11-02T12:30:00', 'lunch'],
+        ['2026-11-02T15:00:00', 'afternoon'],
+        ['2026-11-02T17:30:00', 'near-off'],
+        ['2026-11-02T19:00:00', 'off'],
+        ['2026-11-01T10:00:00', 'rest']
+      ];
+      return cases.map(([iso, expected]) => {
+        const snap = window.__widgetTest.insightAt(iso);
+        return {
+          expected,
+          state: snap.rhythmState,
+          headline: snap.headline,
+          breathing: snap.breathing,
+          freeMinutes: snap.freeMinutes
+        };
+      });
+    })()`);
+    const rhythmHeadlineOk = {
+      before: /距离上班/.test(rhythmStates[0].headline),
+      morning: /距离午休/.test(rhythmStates[1].headline),
+      lunch: /午休中/.test(rhythmStates[2].headline),
+      afternoon: /距离下班/.test(rhythmStates[3].headline),
+      'near-off': /后下班/.test(rhythmStates[4].headline),
+      off: /已下班/.test(rhythmStates[5].headline),
+      rest: /休息/.test(rhythmStates[6].headline),
+    };
+    const noHoursState = await todayWidget.evaluate(
+      "window.__widgetTest.insightAt('2026-11-02T10:00:00', { workHours: { enabled: false }, widgets: { suggestions: false } })"
+    );
+    const nearOffNoBreathing = await todayWidget.evaluate(
+      "window.__widgetTest.insightAt('2026-11-02T17:30:00', { widgets: { breathing: false } })"
+    );
+    check(
+      '今日节奏随时间切换重点并可关闭呼吸与建议',
+      rhythmStates.every((item, index) => item.state === item.expected) &&
+        Object.values(rhythmHeadlineOk).every(Boolean) &&
+        rhythmStates[1].freeMinutes >= 300 &&
+        rhythmStates[4].breathing === true &&
+        nearOffNoBreathing.breathing === false &&
+        noHoursState.headline.includes('还没有设置工作时间') &&
+        noHoursState.suggestion === '',
+      JSON.stringify({
+        states: rhythmStates.map((item) => `${item.expected}:${item.state}`),
+        rhythmHeadlineOk,
+        nearOffBreathing: rhythmStates[4].breathing,
+        nearOffNoBreathing: nearOffNoBreathing.breathing,
+        noHours: noHoursState.headline,
+      })
+    );
+
+    const emptyStates = await todayWidget.evaluate(`(() => {
+      const empty = {
+        calendars: [], events: [], plans: [], tasks: [],
+        settings: { ...state.settings, workHours: { enabled: false } }
+      };
+      const now = new Date('2026-11-02T10:00:00');
+      const today = Insight.today(empty, now);
+      const month = Insight.month(empty, new Date(2026, 10, 1), now);
+      const agenda = Insight.agenda(empty, now, now);
+      const upcoming = Insight.upcoming(empty, now, 5);
+      return {
+        today: today.headline,
+        todayDetail: today.detail,
+        month: month.headline,
+        agenda: agenda.headline,
+        upcomingCount: upcoming.items.length
+      };
+    })()`);
+    check(
+      '空状态与未设置工作时间有专门文案',
+      emptyStates.today.includes('还没有设置工作时间') &&
+        emptyStates.todayDetail.length > 0 &&
+        emptyStates.month.includes('还没有安排') &&
+        emptyStates.agenda.includes('没有安排') &&
+        emptyStates.upcomingCount === 0,
+      JSON.stringify(emptyStates)
+    );
+
     await todayWidget.evaluate("window.desktop.widget.close()");
     todayWidget.close();
+    await sleep(400);
+
+    const conflictDate = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const day = new Date();
+      day.setDate(day.getDate() + 1);
+      const pad = (n) => String(n).padStart(2, '0');
+      const key = day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate());
+      state.events.push(
+        { id: 'test-conflict-a', calendarId: 'work', title: '冲突验证 A', start: key + 'T10:00', end: key + 'T11:00', allDay: false, location: '', notes: '', recurrence: null, reminder: null },
+        { id: 'test-conflict-b', calendarId: 'work', title: '冲突验证 B', start: key + 'T10:30', end: key + 'T11:30', allDay: false, location: '会议室', notes: '', recurrence: null, reminder: null }
+      );
+      window.__app.saveState();
+      return key;
+    })()`);
+    await main.evaluate("document.querySelector('.wg-toggle[data-type=\"upcoming\"]').click()");
+    await sleep(1100);
+    const upcomingTarget = await waitFor(async () => {
+      const list = await targets();
+      return list.find((item) => item.type === 'page' && item.url.includes('type=upcoming'));
+    });
+    const upcomingWidget = await new CDP(upcomingTarget.webSocketDebuggerUrl).connect();
+    await waitFor(() => upcomingWidget.evaluate('Boolean(window.__widgetTest)'));
+    await sleep(600);
+    await upcomingWidget.evaluate(`(() => {
+      const style = document.createElement('style');
+      style.textContent = '.w-up-row:hover,.w-up-hero:hover{background:transparent!important}';
+      document.head.appendChild(style);
+    })()`);
+    await upcomingWidget.shot('feature-widget-upcoming.png');
+    const upcomingState = await upcomingWidget.evaluate(`(() => {
+      const stats = window.__widgetTest.stats();
+      const first = window.__widgetTest.upcomingInsight();
+      const second = window.__widgetTest.upcomingInsight();
+      return {
+        reasons: stats.reasons,
+        count: first.length,
+        firstReason: first[0]?.reason || '',
+        firstKind: first[0]?.reasonKind || '',
+        hasConflict: first.some((item) => item.reasonKind === 'conflict'),
+        stable: JSON.stringify(first) === JSON.stringify(second),
+        planLine: stats.planLine,
+      };
+    })()`);
+    check(
+      '即将到来按需要提前知道的程度排序并说明原因',
+      upcomingState.count > 0 &&
+        upcomingState.reasons.length > 0 &&
+        upcomingState.hasConflict &&
+        upcomingState.stable &&
+        upcomingState.planLine.includes('完成'),
+      JSON.stringify({ ...upcomingState, reasons: upcomingState.reasons.slice(0, 4) })
+    );
+    const smartToggleState = await upcomingWidget.evaluate(`(() => {
+      const smartFirst = window.__widgetTest.upcomingInsight()[0]?.title || '';
+      state.settings.widgets.smartSort = false;
+      render();
+      const timeFirst = window.__widgetTest.upcomingInsight()[0]?.title || '';
+      state.settings.widgets.smartSort = true;
+      render();
+      return { smartFirst, timeFirst };
+    })()`);
+    check(
+      '智能排序可以关闭并回到时间顺序',
+      smartToggleState.timeFirst.length > 0 &&
+        smartToggleState.timeFirst !== smartToggleState.smartFirst,
+      JSON.stringify(smartToggleState)
+    );
+    const planDualState = await upcomingWidget.evaluate(`(() => {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const fmt = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      const start = new Date(now); start.setDate(start.getDate() - 10);
+      const end = new Date(now); end.setDate(end.getDate() + 5);
+      state.plans.push({
+        id: 'test-behind-plan', title: '落后验证', calendarId: 'work',
+        start: fmt(start), end: fmt(end), progress: 10, autoProgress: false,
+        archived: false, reminders: [], milestoneMessages: {}
+      });
+      render();
+      const line = document.querySelector('.w-plan-line');
+      return {
+        text: line?.textContent || '',
+        behind: Boolean(line?.classList.contains('is-behind')),
+        next: line?.querySelector('.w-plan-next')?.textContent || ''
+      };
+    })()`);
+    check(
+      '计划同时显示完成进度与时间进度',
+      planDualState.text.includes('落后验证') &&
+        planDualState.text.includes('完成 10%') &&
+        planDualState.text.includes('时间') &&
+        planDualState.behind &&
+        planDualState.next.includes('20%'),
+      JSON.stringify(planDualState)
+    );
+    await upcomingWidget.evaluate(`(() => {
+      state.plans = state.plans.filter((plan) => plan.id !== 'test-behind-plan');
+      render();
+    })()`);
+    await upcomingWidget.evaluate("window.desktop.widget.close()");
+    upcomingWidget.close();
+    await sleep(400);
+    await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      state.events = state.events.filter((event) => !String(event.id).startsWith('test-conflict-'));
+      window.__app.saveState();
+      window.__app.render();
+    })()`);
+
+    await main.evaluate("document.querySelector('.wg-toggle[data-type=\"monthAgenda\"]').click()");
+    await sleep(1100);
+    const agendaTarget = await waitFor(async () => {
+      const list = await targets();
+      return list.find((item) => item.type === 'page' && item.url.includes('type=monthAgenda'));
+    });
+    const agendaWidget = await new CDP(agendaTarget.webSocketDebuggerUrl).connect();
+    await waitFor(() => agendaWidget.evaluate('Boolean(window.__widgetTest)'));
+    await sleep(700);
+    await agendaWidget.shot('feature-widget-month-agenda.png');
+    const agendaState = await agendaWidget.evaluate(`(() => {
+      const summary = document.querySelector('.w-large-summary')?.textContent?.trim() || '';
+      const selected = document.querySelector('.w-large-day-title')?.textContent?.trim() || '';
+      return {
+        summary,
+        selected,
+        eventRows: document.querySelectorAll('.w-large-list [data-event-id]').length,
+        monthInsight: document.querySelector('.w-month-insight strong')?.textContent?.trim() || '',
+        taskRows: document.querySelectorAll('.w-task-row').length
+      };
+    })()`);
+    check(
+      '月历与议程给出当天具体安排',
+      agendaState.summary.length > 0 &&
+        agendaState.selected.length > 0 &&
+        agendaState.eventRows > 0,
+      JSON.stringify(agendaState)
+    );
+    await agendaWidget.evaluate("window.desktop.widget.close()");
+    agendaWidget.close();
     await sleep(400);
 
     // 14. 显示农历、宜忌、星座

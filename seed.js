@@ -143,6 +143,7 @@ function createSeedData() {
       },
       holidayData: {},
       shiftTemplates: [],
+      widgets: { smartSort: true, breathing: true, suggestions: true },
       shortcuts: {
         today: 't',
         day: 'd',

@@ -1,13 +1,13 @@
 ﻿# 项目上下文 · 朝暮 Morrow
 
-> 新会话先读这里，再读 `docs/HANDOFF.md` / `README.md`。项目已经完成到 v1.2.0，可直接继续开发。
+> 新会话先读这里，再读 `docs/HANDOFF.md` / `README.md`。项目已经完成到 v1.2.1，可直接继续开发。
 
 ## 基本信息
 
 - 产品名：**朝暮 / Morrow**（公开作者名只用 `yaolongda`，不要写真实姓名）
 - 目录：`E:\Code\Claudecode\日历`
-- GitHub：https://github.com/yaolongda/Morrow （已有 v1.0.0；v1.2.0 已准备但尚未推送）
-- 版本：**1.2.0**
+- GitHub：https://github.com/yaolongda/Morrow （已有 v1.0.0；v1.2.1 已准备但尚未推送）
+- 版本：**1.2.1**
 - 技术：Electron 45 + 原生 HTML / CSS / JavaScript；无框架、无运行时 NPM 依赖
 - 数据目录：`%APPDATA%\朝暮\`（`calendar-data.json`、`widgets.json`、`window-state.json`）
 - 旧版「日历」数据会自动迁移
@@ -40,6 +40,7 @@
 - **农历增强**：黄历冲煞；农历生日重复日程。
 - **小组件增强**：同类型可多开、每个独立主题 / 不透明度 / 毛玻璃、记忆显示器、右键新建日程与切换视图。
 - **数据分片**：日程超过 2000 条时按年份写入 `events/YYYY.json`，主文件只保留设置与其它数据；数据减少后自动合并清理。
+- **小组件结论化（Insight 引擎）**：`renderer/lib/insight.js` 统一生成今日节奏、可自由时间、下一件事、智能排序理由、计划双进度、月历忙闲与议程结论；四个组件只读结论，不各自解释数据。今日 / 即将到来 / 月历 / 月历与议程分别回答“还要熬多久、现在干嘛”“接下来要面对什么、计划走到哪”“这个月节奏如何”“今天具体安排是什么”。设置中心可关闭智能排序、临近下班呼吸动画与节奏建议。
 
 **注意**：黄历 / 农历 / 节气 / 星座全部为本地实现。用户已明确不接入收费的 ToolFK 黄历 API，也不要新增联网依赖。
 
@@ -61,6 +62,7 @@ renderer/
   lib/holidays.js          中国法定节假日与调休数据（2024–2026，本地内置）
   lib/workday.js           上下班时段、倒计时与下班庆祝判定
   lib/recurrence.js        重复日程展开引擎（主窗口 + 小组件共用）
+  lib/insight.js           小组件结论引擎（节奏 / 自由时间 / 排序 / 双进度 / 月历）
   lib/ics.js               iCalendar 解析与生成
   lib/almanac.js           农历、节气、黄历、星座
   widget.html/widget.css/widget.js/widget-extra.css
@@ -69,7 +71,7 @@ assets/                    图标
 docs/                      截图、GitHub 发布文案
 tools/
   e2e.js                   核心端到端测试（23 项）
-  features-test.js         新功能端到端测试（65 项）
+  features-test.js         新功能端到端测试（71 项）
   widget-restart-test.js   小组件重启/尺寸/锁定（4 项）
   build-portable.js        Node 版便携构建
   build-readme.js          从 readme-template.html 生成自包含 README.html
@@ -83,28 +85,28 @@ docs/GITHUB_UPLOAD.md
 ```powershell
 npm start                 # 启动开发版
 npm test                  # 核心 23 项
-npm run test:features     # 新功能 65 项
+npm run test:features     # 新功能 71 项
 npm run test:widgets      # 小组件 4 项
-npm run dist              # 生成 dist\朝暮-Morrow-Setup-1.2.0.exe
+npm run dist              # 生成 dist\朝暮-Morrow-Setup-1.2.1.exe
 npm run build:portable    # 生成 release\朝暮-win32-x64\朝暮.exe
 ```
 
-当前 92 项自动化检查全部通过。
+当前 98 项自动化检查全部通过。
 
 ## 交付物
 
-- 安装包：`dist\朝暮-Morrow-Setup-1.2.0.exe`
+- 安装包：`dist\朝暮-Morrow-Setup-1.2.1.exe`
 - 校验：`dist\SHA256SUMS.txt`
 - 便携版：`release\朝暮-win32-x64\朝暮.exe`
 - 干净的 GitHub 仓库：`E:\Code\Claudecode\朝暮-Morrow-GitHub`
-- 源码 ZIP：`E:\Code\Claudecode\朝暮-Morrow-v1.2.0-GitHub.zip`
+- 源码 ZIP：`E:\Code\Claudecode\朝暮-Morrow-v1.2.1-GitHub.zip`
 
 ## 硬约束 / 坑
 
 - **本机有 TSD 透明加密**：最终仓库和交付物中不要放 `.py`。生成图片/文档用的 Python 脚本也不要提交。当前工具脚本已经是 Node / JS。
 - 不要提交 `node_modules/`、`dist/`、`release/`、`screenshots/`、`.lnk`、`.bat`、测试数据。
 - 用户要求匿名，公开内容只写 `yaolongda`。
-- 不要擅自执行 git commit / push；用户会自己更新 GitHub v1.2.0。
+- 不要擅自执行 git commit / push；用户会自己更新 GitHub v1.2.1。
 - 设置页主题点击必须用 `.theme-card[data-theme]`，否则会被 `<html data-theme>` 截获。
 - 修改数据模型时同步更新 `normalizeState`、`seed.js`、导出/导入、`lib/schedule.js`、`lib/recurrence.js`、`lib/workday.js` 与小组件 `normalize`。
 - 日程提醒由渲染进程计算 `collectUpcomingReminders()` 并通过 `reminders:sync` 交给主进程定时器；系统通知与托盘后台触发在 `main.js` 的 `checkReminders()`，不要改成纯渲染进程定时器。

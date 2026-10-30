@@ -1,7 +1,7 @@
 {
   "name": "morrow-calendar",
   "productName": "朝暮",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "朝暮 · Morrow：参考 macOS 日历设计的 Windows 桌面日历，带四种可拖拽桌面小组件",
   "main": "main.js",
   "private": true,

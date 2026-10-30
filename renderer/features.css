@@ -3295,3 +3295,30 @@ html body.material-on .settings-window {
 .template-save-btn:hover {
   text-decoration: underline;
 }
+
+.brief-insight {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.brief-insight-free {
+  color: color-mix(in srgb, var(--accent) 58%, #6d6a72);
+  font-size: 10.5px;
+  font-weight: 550;
+}
+
+.brief-insight-suggestion {
+  color: #a09ea6;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.task-count {
+  margin-left: auto;
+  margin-right: 4px;
+  color: #a09ea6;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}

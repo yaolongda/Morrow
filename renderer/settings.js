@@ -67,6 +67,9 @@
       };
     }
     if (!state.settings.workHours) state.settings.workHours = Workday.defaults();
+    if (!state.settings.widgets) {
+      state.settings.widgets = { smartSort: true, breathing: true, suggestions: true };
+    }
     return state;
   }
 
@@ -610,6 +613,24 @@
         ${row('显示 ISO 周数', toggle('display.weekNumbers', display.weekNumbers === true), '月视图左侧与周视图标题显示周数')}
       </div>
       <div class="set-group">
+        <div class="set-group-title">小组件</div>
+        ${row(
+          '即将到来智能排序',
+          toggle('widgets.smartSort', state.settings.widgets?.smartSort !== false),
+          '按准备、冲突、计划节点与临近程度排序；关闭后按时间'
+        )}
+        ${row(
+          '临近下班呼吸动画',
+          toggle('widgets.breathing', state.settings.widgets?.breathing !== false),
+          '只在距离下班 1 小时内出现，可随时关闭'
+        )}
+        ${row(
+          '节奏与摸鱼建议',
+          toggle('widgets.suggestions', state.settings.widgets?.suggestions !== false),
+          '只在组件里陈述，不会修改你的任何设置'
+        )}
+      </div>
+      <div class="set-group">
         <div class="set-group-title">计划</div>
         ${row('在月视图显示计划', toggle('plans.showInMonth', plans.showInMonth !== false))}
         ${row('在周/日视图显示计划', toggle('plans.showInWeek', plans.showInWeek !== false))}
@@ -806,7 +827,7 @@
         <p class="about-slogan">朝朝暮暮，皆有安排。</p>
         <p class="about-desc">一款参考 macOS 日历设计的 Windows 桌面日历。四种视图、长期计划、四种可拖拽小组件，所有数据只保存在本机。</p>
         <div class="about-meta">
-          <span>版本 ${info ? info.version : '1.2.0'}</span>
+          <span>版本 ${info ? info.version : '1.2.1'}</span>
           <span>Windows 10 / 11 · x64</span>
           <span>MIT License</span>
         </div>
