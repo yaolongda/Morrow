@@ -258,7 +258,7 @@ npm run build:portable
 │  ├─ widget.html / widget.css / widget.js
 │  └─ widget-extra.css
 ├─ assets/                      # 应用与托盘图标
-├─ docs/                        # 截图、发布文案与说明
+├─ docs/                        # 截图与说明
 ├─ tools/
 │  ├─ e2e.js                    # 核心端到端测试
 │  ├─ features-test.js          # 新功能端到端测试
