@@ -26,6 +26,7 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 - Desktop and Start Menu shortcuts are created automatically
 - Uninstall from Windows Settings; calendar data is preserved
 - Unsigned build — if SmartScreen appears, choose **More info → Run anyway**
+- Portable: unzip `朝暮-Morrow-v1.2.1-Portable.zip` and run `朝暮-win32-x64\朝暮.exe` — no install needed
 
 ## Highlights
 
