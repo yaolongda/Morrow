@@ -64,11 +64,26 @@
         almanac: false,
         zodiac: false,
         weekNumbers: false,
+        todayRhythm: true,
       };
     }
     if (!state.settings.workHours) state.settings.workHours = Workday.defaults();
     if (!state.settings.widgets) {
       state.settings.widgets = { smartSort: true, breathing: true, suggestions: true };
+    }
+    if (!state.settings.performance) {
+      state.settings.performance = { liteMode: false };
+    }
+    if (!state.settings.startup) {
+      state.settings.startup = { openAtLogin: false, minimized: true };
+    }
+    if (!state.settings.reminders) {
+      state.settings.reminders = {
+        quiet: { enabled: false, start: '22:00', end: '08:00' },
+        taskReminder: true,
+        taskTime: '09:00',
+        taskSystem: true,
+      };
     }
     return state;
   }
@@ -125,6 +140,30 @@
     else if (current === 'trash') content.innerHTML = trashHTML(state);
     else content.innerHTML = aboutHTML(state);
     content.scrollTop = preserveScroll ? scrollTop : 0;
+    if (current === 'general') renderBackupList();
+  }
+
+  async function renderBackupList() {
+    const el = $('#backup-list');
+    if (!el || !window.desktop?.backups) return;
+    let list = [];
+    try {
+      list = await window.desktop.backups.list();
+    } catch {
+      list = [];
+    }
+    if (!el.isConnected) return;
+    el.innerHTML = list.length
+      ? list
+          .map(
+            (item) => `<div class="backup-row">
+              <span class="backup-date">${item.date}</span>
+              <span class="backup-size">${(item.size / 1024).toFixed(1)} KB</span>
+              <button class="set-btn" type="button" data-backup-restore="${item.file}">恢复</button>
+            </div>`
+          )
+          .join('')
+      : '<p class="set-hint">还没有自动备份，明天首次启动时会生成。</p>';
   }
 
   function row(label, control, hint = '') {
@@ -170,6 +209,19 @@
         ${row('显示侧边栏', toggle('sidebarVisible', state.settings.sidebarVisible !== false))}
       </div>
       <div class="set-group">
+        <div class="set-group-title">启动</div>
+        ${row(
+          '开机自动启动',
+          toggle('startup.openAtLogin', state.settings.startup?.openAtLogin === true),
+          '仅安装版生效；开发模式只记录开关状态'
+        )}
+        ${row(
+          '启动时最小化到托盘',
+          toggle('startup.minimized', state.settings.startup?.minimized !== false),
+          '开启后开机启动不会弹出主窗口，小组件仍会恢复'
+        )}
+      </div>
+      <div class="set-group">
         <div class="set-group-title">数据</div>
         ${row(
           '配置备份',
@@ -181,6 +233,12 @@
           '<button class="set-btn" data-action="open-data">打开文件夹</button>',
           '所有数据仅保存在本机'
         )}
+        ${row(
+          '自动备份',
+          '<button class="set-btn" data-action="refresh-backups">刷新</button>',
+          '每天首次启动自动备份，保留最近 7 份，可随时恢复'
+        )}
+        <div class="backup-list" id="backup-list"></div>
       </div>
       <div class="set-group">
         <div class="set-group-title">自定义快捷键</div>
@@ -514,6 +572,14 @@
         )}
       </div>
       <div class="set-group">
+        <div class="set-group-title">性能</div>
+        ${row(
+          '轻量模式',
+          toggle('performance.liteMode', state.settings.performance?.liteMode === true),
+          '关闭毛玻璃、背景图片、庆祝粒子与呼吸动画，降低 GPU 占用'
+        )}
+      </div>
+      <div class="set-group">
         <div class="set-group-title">字体与材质</div>
         ${row(
           '字体',
@@ -611,6 +677,7 @@
         ${row('显示黄历宜忌', toggle('display.almanac', display.almanac), '建除十二神与宜忌，仅作文化参考')}
         ${row('显示星座运势', toggle('display.zodiac', display.zodiac), '本地生成，仅供娱乐')}
         ${row('显示 ISO 周数', toggle('display.weekNumbers', display.weekNumbers === true), '月视图左侧与周视图标题显示周数')}
+        ${row('主页面今日节奏条', toggle('display.todayRhythm', display.todayRhythm !== false), '在主视图顶部显示今天的节奏、下一件事与自己的时间；折叠后只保留一行结论')}
       </div>
       <div class="set-group">
         <div class="set-group-title">小组件</div>
@@ -681,6 +748,42 @@
       }" data-plan-filter="${id}">${label}<em>${count}</em></button>`;
 
     return `
+      <div class="set-group">
+        <div class="set-group-title">提醒</div>
+        ${row(
+          '免打扰时段',
+          toggle('reminders.quiet.enabled', state.settings.reminders?.quiet?.enabled === true),
+          '开启后此时段只显示应用内提醒，不弹 Windows 系统通知'
+        )}
+        ${row(
+          '开始',
+          `<input type="time" class="set-time" data-path="reminders.quiet.start" value="${
+            state.settings.reminders?.quiet?.start || '22:00'
+          }">`
+        )}
+        ${row(
+          '结束',
+          `<input type="time" class="set-time" data-path="reminders.quiet.end" value="${
+            state.settings.reminders?.quiet?.end || '08:00'
+          }">`,
+          '支持跨午夜，例如 22:00 – 08:00'
+        )}
+        ${row(
+          '任务到期提醒',
+          toggle('reminders.taskReminder', state.settings.reminders?.taskReminder !== false),
+          '截止日当天按设定时间提醒，逾期任务次日再提醒一次'
+        )}
+        ${row(
+          '任务提醒时间',
+          `<input type="time" class="set-time" data-path="reminders.taskTime" value="${
+            state.settings.reminders?.taskTime || '09:00'
+          }">`
+        )}
+        ${row(
+          '任务使用系统通知',
+          toggle('reminders.taskSystem', state.settings.reminders?.taskSystem !== false)
+        )}
+      </div>
       <div class="set-group">
         <div class="set-group-title">计划类型</div>
         <div class="plan-type-explain">
@@ -827,7 +930,7 @@
         <p class="about-slogan">朝朝暮暮，皆有安排。</p>
         <p class="about-desc">一款参考 macOS 日历设计的 Windows 桌面日历。四种视图、长期计划、四种可拖拽小组件，所有数据只保存在本机。</p>
         <div class="about-meta">
-          <span>版本 ${info ? info.version : '1.2.1'}</span>
+          <span>版本 ${info ? info.version : '1.2.2'}</span>
           <span>Windows 10 / 11 · x64</span>
           <span>MIT License</span>
         </div>
@@ -872,6 +975,7 @@
       deps.onChange({ soft: true });
       render();
     } else if (action === 'import-holidays') deps.importHolidays?.();
+    else if (action === 'refresh-backups') renderBackupList();
     else if (action === 'reset-holidays') {
       const state = ensureDefaults(deps.getState());
       state.settings.holidayData = {};
@@ -943,6 +1047,20 @@
         } else {
           clear();
         }
+        return;
+      }
+      const restoreButton = event.target.closest('[data-backup-restore]');
+      if (restoreButton) {
+        const file = restoreButton.dataset.backupRestore;
+        deps.openConfirm({
+          title: '恢复这张备份？',
+          text: `将用 ${file} 覆盖当前数据；当前数据会先另存为 pre-restore.json，恢复后应用会重新载入。`,
+          okLabel: '恢复',
+          onConfirm: async () => {
+            const result = await window.desktop.backups.restore(file);
+            if (!result?.ok) deps.showToast(result?.error || '恢复失败');
+          },
+        });
         return;
       }
       const actionNode = event.target.closest('[data-action]');
@@ -1238,6 +1356,12 @@
           target = target[path[index]];
         }
         target[path[path.length - 1]] = input.checked;
+        if (path[0] === 'startup' && window.desktop?.app?.setStartup) {
+          window.desktop.app.setStartup({
+            openAtLogin: state.settings.startup?.openAtLogin === true,
+            minimized: state.settings.startup?.minimized !== false,
+          });
+        }
         deps.onChange({ rerender: true });
         render(true);
       }
@@ -1280,6 +1404,18 @@
         state.settings.workHours = Workday.normalize(workHours);
         deps.onChange({ soft: true });
         render();
+        return;
+      }
+      const timeInput = event.target.closest('input.set-time[data-path]');
+      if (timeInput) {
+        const state = ensureDefaults(deps.getState());
+        const path = timeInput.dataset.path.split('.');
+        let target = state.settings;
+        for (let index = 0; index < path.length - 1; index += 1) {
+          target = target[path[index]];
+        }
+        target[path[path.length - 1]] = timeInput.value;
+        deps.onChange({ soft: true });
         return;
       }
       const select = event.target.closest('.set-select[data-path]');
@@ -1366,3 +1502,4 @@
 
   window.SettingsUI = { init, open, close, isOpen, render };
 })();
+

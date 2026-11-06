@@ -34,6 +34,7 @@
     classic: { name: '经典白' },
     paper: { name: '暖纸' },
     mist: { name: '晨雾' },
+    night: { name: '夜色' },
   };
 
   const ACCENTS = ['#FF3B30', '#FF9500', '#34C759', '#0A84FF', '#AF52DE', '#FF2D55', '#8E8E93'];
@@ -62,6 +63,10 @@
     const background = appearance.background || null;
     const hasBackground = Boolean(background?.dataUrl);
     document.body.classList.toggle('has-bg', hasBackground);
+    document.body.classList.toggle(
+      'lite-mode',
+      settings?.performance?.liteMode === true
+    );
 
     const layer = document.getElementById('bg-image');
     const dim = document.getElementById('bg-dim');
@@ -93,7 +98,7 @@
     const appearance = { ...(settings?.appearance || {}) };
     const root = document.documentElement;
     if (override) {
-      if (['classic', 'paper', 'mist'].includes(override.theme)) {
+      if (['classic', 'paper', 'mist', 'night'].includes(override.theme)) {
         appearance.theme = override.theme;
       }
       if (Number.isFinite(Number(override.opacity)) && override.opacity !== null) {
@@ -127,6 +132,10 @@
     const background = appearance.background || null;
     const hasBackground = Boolean(background?.dataUrl);
     document.body.classList.toggle('has-bg', hasBackground);
+    document.body.classList.toggle(
+      'lite-mode',
+      settings?.performance?.liteMode === true
+    );
     const layer = document.getElementById('widget-bg');
     const dim = document.getElementById('widget-bg-dim');
     if (layer) {

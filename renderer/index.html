@@ -168,7 +168,10 @@
         </footer>
       </aside>
 
-      <main class="main-view" id="main-view" tabindex="-1"></main>
+      <div class="main-column">
+        <section class="today-rhythm hidden" id="today-rhythm" aria-label="今日节奏"></section>
+        <main class="main-view" id="main-view" tabindex="-1"></main>
+      </div>
     </div>
   </div>
 
@@ -429,7 +432,7 @@
         <button data-section="plans">计划</button>
         <button data-section="trash">回收站</button>
         <button data-section="about">关于</button>
-        <div class="settings-nav-footer" id="settings-version">v1.2.1</div>
+        <div class="settings-nav-footer" id="settings-version">v1.2.2</div>
       </aside>
       <section class="settings-pane">
         <header class="settings-head">
@@ -575,12 +578,14 @@
 
   <div class="overlay hidden" id="event-reminder-overlay">
     <div class="event-reminder-card" role="dialog" aria-modal="true" aria-labelledby="event-reminder-title">
-      <span class="event-reminder-kicker">日程提醒</span>
+      <span class="event-reminder-kicker" id="event-reminder-kicker">日程提醒</span>
       <span class="event-reminder-time" id="event-reminder-time"></span>
       <h2 class="event-reminder-title" id="event-reminder-title"></h2>
       <p class="event-reminder-meta" id="event-reminder-meta"></p>
       <div class="event-reminder-actions">
-        <button type="button" class="text-btn" id="event-reminder-snooze">5 分钟后提醒</button>
+        <button type="button" class="text-btn" id="event-reminder-snooze" data-snooze="5">稍后 5 分钟</button>
+        <button type="button" class="text-btn" data-snooze="10">10 分钟</button>
+        <button type="button" class="text-btn" data-snooze="15">15 分钟</button>
         <button type="button" class="text-btn" id="event-reminder-open">打开日程</button>
         <button type="button" class="primary-btn" id="event-reminder-dismiss">知道了</button>
       </div>
@@ -645,10 +650,12 @@
 
   <script src="lib/schedule.js"></script>
   <script src="lib/holidays.js"></script>
+  <script src="lib/copy.js"></script>
   <script src="lib/workday.js"></script>
   <script src="lib/almanac.js"></script>
   <script src="lib/recurrence.js"></script>
   <script src="lib/ics.js"></script>
+  <script src="lib/reminders.js"></script>
   <script src="lib/insight.js"></script>
   <script src="appearance.js"></script>
   <script src="plans.js"></script>
@@ -656,3 +663,4 @@
   <script src="app.js"></script>
 </body>
 </html>
+

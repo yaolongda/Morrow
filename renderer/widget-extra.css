@@ -1370,3 +1370,153 @@ body[data-size="xs"] .w-suggestion-inline {
 .w-reason {
   width: fit-content;
 }
+
+/* ------------------------------------------------------------------ */
+/* 夜色主题（小组件）                                                  */
+/* ------------------------------------------------------------------ */
+
+html[data-theme="night"] body,
+html[data-theme="night"] .widget-card {
+  color: #e9e7ef;
+}
+
+html[data-theme="night"] .widget-card {
+  background:
+    radial-gradient(110% 90% at 100% 0%, rgba(84, 70, 96, 0.45) 0%, rgba(20, 19, 23, 0) 58%),
+    linear-gradient(165deg, #242129 0%, #17151b 100%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="night"] body[data-type="today"] .widget-card {
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgba(120, 58, 52, 0.42) 0%, rgba(20, 19, 23, 0) 60%),
+    linear-gradient(165deg, #272229 0%, #17151b 100%);
+}
+
+html[data-theme="night"] body[data-type="upcoming"] .widget-card {
+  background:
+    radial-gradient(120% 130% at 0% 0%, rgba(48, 68, 104, 0.5) 0%, rgba(20, 19, 23, 0) 55%),
+    linear-gradient(165deg, #212029 0%, #17151b 100%);
+}
+
+html[data-theme="night"] body[data-type="monthAgenda"] .widget-card {
+  background:
+    radial-gradient(100% 80% at 0% 0%, rgba(96, 60, 54, 0.35) 0%, rgba(20, 19, 23, 0) 50%),
+    linear-gradient(165deg, #242129 0%, #17151b 100%);
+}
+
+html[data-theme="night"] .w-title,
+html[data-theme="night"] .w-up-day,
+html[data-theme="night"] .w-large-day-title,
+html[data-theme="night"] .w-today-date,
+html[data-theme="night"] .w-rhythm-headline,
+html[data-theme="night"] .w-plan-main strong,
+html[data-theme="night"] .w-up-title,
+html[data-theme="night"] .w-up-hero-title,
+html[data-theme="night"] .w-up-hero-date strong,
+html[data-theme="night"] .w-month-insight strong,
+html[data-theme="night"] .w-day {
+  color: #eceaf2;
+}
+
+html[data-theme="night"] .w-sub,
+html[data-theme="night"] .w-up-month,
+html[data-theme="night"] .w-large-day-sub,
+html[data-theme="night"] .w-event-meta,
+html[data-theme="night"] .w-up-meta,
+html[data-theme="night"] .w-today-meta,
+html[data-theme="night"] .w-empty,
+html[data-theme="night"] .w-plan-type,
+html[data-theme="night"] .w-plan-behind,
+html[data-theme="night"] .w-plan-next,
+html[data-theme="night"] .w-more,
+html[data-theme="night"] .w-insight-key {
+  color: #9793a1;
+}
+
+html[data-theme="night"] .w-up-row:hover,
+html[data-theme="night"] .w-event:hover,
+html[data-theme="night"] .w-day:hover,
+html[data-theme="night"] .widget-control:hover,
+html[data-theme="night"] .w-more:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+html[data-theme="night"] .w-more:hover {
+  color: #eceaf2;
+}
+
+html[data-theme="night"] .w-rhythm {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+html[data-theme="night"] .w-rhythm.rest .w-rhythm-headline,
+html[data-theme="night"] .w-rhythm.off .w-rhythm-headline {
+  color: #8fdcab;
+}
+
+html[data-theme="night"] .w-rhythm.near-off {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+html[data-theme="night"] .w-plan-line {
+  border-top-color: rgba(255, 255, 255, 0.09);
+}
+
+html[data-theme="night"] .w-plan-type,
+html[data-theme="night"] .w-plan-behind,
+html[data-theme="night"] .w-plan-next,
+html[data-theme="night"] .w-segmented,
+html[data-theme="night"] .w-nav-btn {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+html[data-theme="night"] .w-plan-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="night"] .w-chip {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="night"] .w-day.selected:not(.today) .num {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="night"] .widget-menu {
+  background: #211f27;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="night"] .widget-menu button {
+  color: #d9d6e0;
+}
+
+html[data-theme="night"] .widget-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="night"] .widget-menu-sep {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="night"] .widget-menu-fields select {
+  background: #2a2731;
+  border-color: #3a3642;
+  color: #e9e7ef;
+}
+
+body.lite-mode #widget-bg,
+body.lite-mode #widget-bg-dim,
+body.lite-mode .celebration-canvas {
+  display: none !important;
+}
+
+body.lite-mode *,
+body.lite-mode *::before,
+body.lite-mode *::after {
+  backdrop-filter: none !important;
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+}

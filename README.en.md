@@ -1,4 +1,4 @@
-﻿# Morrow · 朝暮
+# Morrow · 朝暮
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6)
 ![Electron 45](https://img.shields.io/badge/Electron-45-47848F)
@@ -18,7 +18,7 @@
 Get the latest Windows installer from **[Releases](../../releases/latest)**:
 
 ```text
-朝暮-Morrow-Setup-1.2.1.exe
+朝暮-Morrow-Setup-1.2.2.exe
 ```
 
 - Windows 10 / 11, x64
@@ -26,7 +26,7 @@ Get the latest Windows installer from **[Releases](../../releases/latest)**:
 - Desktop and Start Menu shortcuts are created automatically
 - Uninstall from Windows Settings; calendar data is preserved
 - Unsigned build — if SmartScreen appears, choose **More info → Run anyway**
-- Portable: unzip `朝暮-Morrow-v1.2.1-Portable.zip` and run `朝暮-win32-x64\朝暮.exe` — no install needed
+- Portable: unzip `朝暮-Morrow-v1.2.2-Portable.zip` and run `朝暮-win32-x64\朝暮.exe` — no install needed
 
 ## Highlights
 
@@ -124,6 +124,8 @@ All four widgets share one conclusion engine instead of interpreting data separa
 
 Time formats, conflict labels, task counts and progress language are identical across widgets. Within the last hour of work the Today widget breathes very slightly; there is no other persistent animation. Smart sorting, breathing and suggestions can each be turned off in Settings → Display → Widgets.
 
+The main window carries the same conclusions as a slim **Today rhythm bar** at the top: current rhythm, the next commitment and how much time is still yours. Clicking the next item opens today in Day view; the bar can be collapsed and remembers that state, and it can also be toggled in Settings → Display.
+
 ![Off-work celebration](docs/widget-celebration.png)
 
 ### More in 1.2
@@ -138,6 +140,11 @@ Time formats, conflict labels, task counts and progress language are identical a
 - **Custom shortcuts**: remap today, views, new plan and prev/next.
 - **Lunar enhancements**: almanac clash/direction, plus yearly lunar-birthday events.
 - **Sharded storage**: above 2000 events, events are stored per year in `events/YYYY.json` and merged back automatically.
+- **Night theme**: a fourth dark theme covering the main window, settings, tray and all four widgets, without recoloring events.
+- **Background & startup**: widgets skip redraws when nothing changed; the main window pauses UI timers when hidden to the tray; a lite mode turns off blur, background images and celebration particles; optional start-at-login with a silent tray launch.
+- **Smarter reminders**: quiet hours (including across midnight), snooze for 5 / 10 / 15 minutes that survives restarts, and task due-day reminders with optional Windows notifications.
+- **Daily backups**: one local snapshot per day, seven kept, listed and restorable from Settings.
+- **Installer**: defaults to `D:\朝暮`; uninstall offers a clean mode that removes data, login items and related registry keys.
 
 ![Desktop widgets](docs/widgets-showcase.png)
 
@@ -147,7 +154,7 @@ Open with the gear button or `Ctrl + ,`.
 
 - **General**: week start, sidebar, config export/import, data folder.
 - **Work schedule**: rest presets, custom weekdays, shift hours, statutory holiday sync, special-date overrides and overtime.
-- **Appearance**: three themes, accent color, six font choices, Windows 11 Mica/Acrylic, panel opacity, glass blur, and a custom background image with opacity/blur/dim controls.
+- **Appearance**: four themes (Classic, Paper, Mist, Night), accent color, six font choices, Windows 11 Mica/Acrylic, panel opacity, glass blur, and a custom background image with opacity/blur/dim controls.
 - **Display**: lunar date, 24 solar terms, almanac auspicious/inauspicious activities, zodiac fortune, plan visibility.
 - **Plans**: plan types, active plans, create new.
 - **About**: version, slogan, project homepage, update link.
@@ -188,7 +195,7 @@ Build:
 
 ```powershell
 npm run dist
-# dist\朝暮-Morrow-Setup-1.2.1.exe
+# dist\朝暮-Morrow-Setup-1.2.2.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe
@@ -223,7 +230,7 @@ npm run test:features
 npm run test:widgets
 ```
 
-98 automated checks: 23 core, 71 feature, 4 widget-restart. Coverage includes work/rest presets, statutory holidays and holiday JSON import, shift hours and celebration intensity, shift templates, batch date overrides, recurring events and lunar birthdays, event reminders and main-process scheduling, all-day collapse, undo/redo, recycle bin, plan auto-progress / archiving / cycles / custom milestones, iCalendar, tasks, templates, tag colors, week numbers, history navigation, widget multi-instance / per-widget appearance / conclusion-driven rhythm / smart sorting / dual progress / empty states / celebration animation, sharded storage, config import/export and restart persistence.
+125 automated checks: 23 core, 90 feature, 4 widget-restart, 8 installer. Coverage includes work/rest presets, statutory holidays and holiday JSON import, shift hours and celebration intensity, shift templates, batch date overrides, recurring events and lunar birthdays, event reminders and main-process scheduling, cross-midnight quiet hours, persistent snooze, task due reminders, all-day collapse, undo/redo, recycle bin, plan auto-progress / archiving / cycles / custom milestones, iCalendar, tasks, templates, tag colors, week numbers, history navigation, widget multi-instance / per-widget appearance / conclusion-driven rhythm / smart sorting / dual progress / empty states / celebration animation / night theme, the main-window rhythm bar, four themes and lite mode, daily backups and restore, installer default directory and clean uninstall, sharded storage, config import/export and restart persistence.
 
 ## Known limitations
 

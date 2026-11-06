@@ -8,6 +8,14 @@
 
 (function () {
   const MILESTONES = [20, 50, 75, 80, 90, 100];
+  const SUGGESTION_FALLBACK = {
+    rest: '今天要不要去做点喜欢的事？',
+    empty: '今天没有会议，要不要留一段整块时间？',
+    fragmented: '今天安排比较碎，要不要先处理轻量的事？',
+    free: '空档还够，要不要先喘口气？',
+    full: '今天比较满，要不要先照顾好自己？',
+    normal: '节奏还行，要不要按自己的步子来？',
+  };
   const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const pad = (value) => String(value).padStart(2, '0');
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -359,14 +367,22 @@
       detail = '在设置里填写上下班时间，这里会显示今天的节奏';
     } else if (rhythmState === 'rest') {
       headline = '今天休息';
-      detail = next
-        ? `下一次上班 · ${next.dayLabel || formatDayShort(next.at, now)} ${next.timeLabel}`
-        : '好好休息，今天不用赶';
+      if (next?.kind === 'work') {
+        detail = `下一次上班 · ${next.dayLabel || formatDayShort(next.at, now)} ${next.timeLabel}`;
+      } else if (next?.kind === 'event') {
+        detail = `接下来 · ${next.timeLabel} ${next.title}`;
+      } else {
+        detail = '好好休息，今天不用赶';
+      }
     } else if (rhythmState === 'off') {
       headline = '今天已下班';
-      detail = next
-        ? `下一次上班 · ${next.dayLabel || formatDayShort(next.at, now)} ${next.timeLabel}`
-        : '今天的事情到这里就好';
+      if (next?.kind === 'work') {
+        detail = `下一次上班 · ${next.dayLabel || formatDayShort(next.at, now)} ${next.timeLabel}`;
+      } else if (next?.kind === 'event') {
+        detail = `接下来 · ${next.timeLabel} ${next.title}`;
+      } else {
+        detail = '今天的事情到这里就好';
+      }
     } else if (status?.detail) {
       headline = status.detail;
       if (status.state === 'before') {
@@ -387,12 +403,14 @@
 
     let suggestion = '';
     if (state.settings?.widgets?.suggestions !== false && enabled) {
-      if (dayType === 'rest') suggestion = '今天要不要去做点喜欢的事？';
-      else if (events.length === 0) suggestion = '今天没有会议，要不要留一段整块时间？';
-      else if (gaps.fragmented) suggestion = '今天安排比较碎，要不要先处理轻量的事？';
-      else if (free.minutes >= 120) suggestion = '空档还够，要不要先喘口气？';
-      else if (free.minutes < 30) suggestion = '今天比较满，要不要先照顾好自己？';
-      else suggestion = '节奏还行，要不要按自己的步子来？';
+      let kind = 'normal';
+      if (dayType === 'rest') kind = 'rest';
+      else if (events.length === 0) kind = 'empty';
+      else if (gaps.fragmented) kind = 'fragmented';
+      else if (free.minutes >= 120) kind = 'free';
+      else if (free.minutes < 30) kind = 'full';
+      suggestion =
+        window.Copy?.suggestion(kind, now) || SUGGESTION_FALLBACK[kind] || '';
     }
 
     const nextLine = !enabled

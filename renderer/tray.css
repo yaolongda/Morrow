@@ -200,3 +200,37 @@ button {
 .tray-btn.primary:hover {
   filter: brightness(1.05);
 }
+
+/* 夜色主题 */
+html[data-theme="night"] {
+  color-scheme: dark;
+  --text: #e9e7ef;
+  --text-2: #b1adbb;
+  --text-3: #85818e;
+  --line: #37343f;
+}
+
+html[data-theme="night"] .tray-card {
+  background: linear-gradient(165deg, #242129 0%, #17151b 100%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="night"] .tray-nav,
+html[data-theme="night"] .tray-day {
+  color: var(--text-2);
+}
+
+html[data-theme="night"] .tray-nav:hover,
+html[data-theme="night"] .tray-day:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+html[data-theme="night"] .tray-day.outside {
+  color: #5d5967;
+}
+
+html[data-theme="night"] .tray-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}

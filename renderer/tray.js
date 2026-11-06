@@ -82,6 +82,12 @@ function normalize(data) {
         settings.holidayData && typeof settings.holidayData === 'object'
           ? settings.holidayData
           : {},
+      theme: ['classic', 'paper', 'mist', 'night'].includes(settings.appearance?.theme)
+        ? settings.appearance.theme
+        : 'classic',
+      accent: /^#[0-9a-f]{6}$/i.test(settings.appearance?.accent || '')
+        ? settings.appearance.accent
+        : '#FF3B30',
     },
   };
 }
@@ -117,6 +123,8 @@ function eventsOnDay(day) {
 
 function render() {
   Holidays.setCustom(state.settings.holidayData);
+  document.documentElement.dataset.theme = state.settings.theme;
+  document.documentElement.style.setProperty('--accent', state.settings.accent);
   const today = startOfDay(new Date());
   const start = startOfWeek(startOfMonth(monthCursor), weekStart());
   const cells = Array.from({ length: 42 }, (_, index) => addDays(start, index));

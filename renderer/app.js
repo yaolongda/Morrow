@@ -36,12 +36,29 @@ const DEFAULT_DISPLAY = {
   almanac: false,
   zodiac: false,
   weekNumbers: false,
+  todayRhythm: true,
 };
 
 const DEFAULT_PLAN_SETTINGS = {
   showInMonth: true,
   showInWeek: true,
   reminders: true,
+};
+
+const DEFAULT_PERFORMANCE = {
+  liteMode: false,
+};
+
+const DEFAULT_STARTUP = {
+  openAtLogin: false,
+  minimized: true,
+};
+
+const DEFAULT_REMINDER_SETTINGS = {
+  quiet: { enabled: false, start: '22:00', end: '08:00' },
+  taskReminder: true,
+  taskTime: '09:00',
+  taskSystem: true,
 };
 
 const DEFAULT_SHORTCUTS = {
@@ -399,7 +416,36 @@ function normalizeTasks(input) {
   return result;
 }
 
-function normalizeTrash(input) {  const result = [];
+function normalizeReminderSnoozes(input) {
+  const result = [];
+  const cutoff = Date.now() - 2 * 86400000;
+  for (const entry of Array.isArray(input) ? input : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const key = typeof entry.key === 'string' ? entry.key : '';
+    const sourceKey = typeof entry.sourceKey === 'string' ? entry.sourceKey : '';
+    const at = typeof entry.at === 'string' ? Date.parse(entry.at) : NaN;
+    if (!key || !sourceKey || !Number.isFinite(at) || at < cutoff) continue;
+    result.push({
+      key,
+      sourceKey,
+      at: new Date(at).toISOString(),
+      title: typeof entry.title === 'string' ? entry.title.slice(0, 200) : '提醒',
+      body: typeof entry.body === 'string' ? entry.body.slice(0, 500) : '',
+      eventId: entry.eventId != null ? String(entry.eventId) : undefined,
+      occurrenceDate:
+        typeof entry.occurrenceDate === 'string' ? entry.occurrenceDate : undefined,
+      taskId: entry.taskId != null ? String(entry.taskId) : undefined,
+      calendar: typeof entry.calendar === 'string' ? entry.calendar : undefined,
+      system: entry.system === true,
+      snoozedAt: typeof entry.snoozedAt === 'string' ? entry.snoozedAt : undefined,
+    });
+    if (result.length >= 200) break;
+  }
+  return result;
+}
+
+function normalizeTrash(input) {
+  const result = [];
   const now = Date.now();
   for (const entry of Array.isArray(input) ? input : []) {
     if (!entry || typeof entry !== 'object') continue;
@@ -603,6 +649,7 @@ function normalizeState(data) {
     almanac: sourceDisplay.almanac === true,
     zodiac: sourceDisplay.zodiac === true,
     weekNumbers: sourceDisplay.weekNumbers === true,
+    todayRhythm: sourceDisplay.todayRhythm !== false,
   };
   const sourcePlanSettings =
     sourceSettings.plans && typeof sourceSettings.plans === 'object'
@@ -622,6 +669,7 @@ function normalizeState(data) {
     tasks: normalizeTasks(source.tasks),
     eventTemplates: normalizeEventTemplates(source.eventTemplates),
     trash: normalizeTrash(source.trash),
+    reminderSnoozes: normalizeReminderSnoozes(source.reminderSnoozes),
     settings: {
       weekStart,
       defaultCalendarId,
@@ -633,6 +681,29 @@ function normalizeState(data) {
       shiftTemplates: normalizeShiftTemplates(sourceSettings.shiftTemplates),
       shortcuts: normalizeShortcuts(sourceSettings.shortcuts),
       widgets: normalizeWidgetSettings(sourceSettings.widgets),
+      performance: {
+        liteMode: sourceSettings.performance?.liteMode === true,
+      },
+      startup: {
+        openAtLogin: sourceSettings.startup?.openAtLogin === true,
+        minimized: sourceSettings.startup?.minimized !== false,
+      },
+      reminders: {
+        quiet: {
+          enabled: sourceSettings.reminders?.quiet?.enabled === true,
+          start: /^\d{2}:\d{2}$/.test(sourceSettings.reminders?.quiet?.start || '')
+            ? sourceSettings.reminders.quiet.start
+            : DEFAULT_REMINDER_SETTINGS.quiet.start,
+          end: /^\d{2}:\d{2}$/.test(sourceSettings.reminders?.quiet?.end || '')
+            ? sourceSettings.reminders.quiet.end
+            : DEFAULT_REMINDER_SETTINGS.quiet.end,
+        },
+        taskReminder: sourceSettings.reminders?.taskReminder !== false,
+        taskTime: /^\d{2}:\d{2}$/.test(sourceSettings.reminders?.taskTime || '')
+          ? sourceSettings.reminders.taskTime
+          : DEFAULT_REMINDER_SETTINGS.taskTime,
+        taskSystem: sourceSettings.reminders?.taskSystem !== false,
+      },
       appearance,
       display,
       plans: planSettings,
@@ -973,6 +1044,73 @@ function renderDayBrief() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 今日节奏条                                                          */
+/* ------------------------------------------------------------------ */
+
+function renderTodayRhythm() {
+  const el = $('#today-rhythm');
+  if (!el || !window.Insight) return;
+  const snap = Insight.today(state, new Date());
+  const expanded = displayPrefs().todayRhythm !== false;
+  const suggestionsOn = state.settings.widgets?.suggestions !== false;
+
+  el.dataset.rhythm = snap.rhythmState;
+  el.classList.toggle('is-collapsed', !expanded);
+  el.classList.toggle('is-breathing', Boolean(snap.breathing));
+  el.classList.remove('hidden');
+
+  const toggleLabel = expanded ? '折叠今日节奏' : '展开今日节奏';
+  const toggleIcon = expanded
+    ? '<path d="m6 14.5 6-6 6 6" />'
+    : '<path d="m6 9.5 6 6 6-6" />';
+
+  if (!expanded) {
+    el.innerHTML = `
+      <div class="tr-main">
+        <span class="tr-dot" aria-hidden="true"></span>
+        <strong class="tr-headline">${esc(snap.headline)}</strong>
+        <span class="tr-collapsed-next">${esc(snap.nextLine)}</span>
+      </div>
+      <button class="tr-toggle" type="button" aria-label="${toggleLabel}" aria-expanded="false" title="${toggleLabel}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${toggleIcon}</svg>
+      </button>`;
+  } else {
+    const suggestion = snap.enabled && suggestionsOn ? snap.suggestion : '';
+    el.innerHTML = `
+      <div class="tr-main">
+        <span class="tr-dot" aria-hidden="true"></span>
+        <div class="tr-copy">
+          <strong class="tr-headline">${esc(snap.headline)}</strong>
+          <span class="tr-detail">${esc(snap.detail)}</span>
+        </div>
+      </div>
+      <button class="tr-next" type="button" title="在日历中打开今天">
+        <span class="tr-key">下一件</span>
+        <span class="tr-next-text">${esc(snap.nextLine)}</span>
+      </button>
+      <div class="tr-side">
+        ${snap.enabled ? `<span class="tr-free">${esc(snap.free.label)}</span>` : ''}
+        ${suggestion ? `<span class="tr-suggestion">${esc(suggestion)}</span>` : ''}
+      </div>
+      <button class="tr-toggle" type="button" aria-label="${toggleLabel}" aria-expanded="true" title="${toggleLabel}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${toggleIcon}</svg>
+      </button>`;
+  }
+
+  el.onclick = (event) => {
+    const toggle = event.target.closest('.tr-toggle');
+    if (toggle) {
+      const display = state.settings.display || (state.settings.display = { ...DEFAULT_DISPLAY });
+      display.todayRhythm = !(display.todayRhythm !== false);
+      saveState();
+      renderTodayRhythm();
+      return;
+    }
+    if (event.target.closest('.tr-next')) openDayView(ymd(new Date()));
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* 标题                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -1013,6 +1151,7 @@ function render() {
   renderPlanList();
   renderTaskList();
   renderDayBrief();
+  renderTodayRhythm();
   renderMainView();
   if (searchInput.value.trim()) renderSearchResults();
   updateNowLine();
@@ -1765,6 +1904,22 @@ function updateNowLine() {
   if (!line) return;
   const now = new Date();
   line.style.top = `${((now.getHours() * 60 + now.getMinutes()) / 1440) * DAY_HEIGHT}px`;
+}
+
+/** 主窗口隐藏到托盘时暂停 UI 定时器，恢复显示后调用一次即可补上。 */
+function tickUi() {
+  if (document.hidden) return false;
+  const nowKey = ymd(new Date());
+  if (nowKey !== currentDayKey) {
+    currentDayKey = nowKey;
+    Plans.checkAutoMilestones(true);
+    showPlanReminders(true);
+    render();
+  } else {
+    updateNowLine();
+    renderTodayRhythm();
+  }
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -4225,6 +4380,11 @@ function handleNavigation(payload) {
 
   closeAllPopups();
 
+  if (payload.taskId) {
+    openTaskOverlay();
+    return;
+  }
+
   if (payload.eventId) {
     const event = state.events.find((item) => item.id === payload.eventId);
     if (event) {
@@ -4392,6 +4552,44 @@ function collectUpcomingReminders(now = new Date(), horizonDays = 7) {
     }
     if (list.length >= 200) break;
   }
+  const reminderSettings = state.settings.reminders || {};
+  if (reminderSettings.taskReminder !== false) {
+    const [hour, minute] = String(reminderSettings.taskTime || '09:00')
+      .split(':')
+      .map(Number);
+    for (const task of state.tasks || []) {
+      if (task.done || !task.due) continue;
+      const due = parseLocal(`${task.due}T00:00`);
+      const dueAt = new Date(
+        due.getFullYear(),
+        due.getMonth(),
+        due.getDate(),
+        Number.isFinite(hour) ? hour : 9,
+        Number.isFinite(minute) ? minute : 0,
+        0,
+        0
+      );
+      const candidates = dueAt < rangeStart ? [addDays(dueAt, 1)] : [dueAt];
+      for (const at of candidates) {
+        if (at < rangeStart || at > horizon) continue;
+        list.push({
+          key: `task:${task.id}:${ymd(at)}:${at.getTime()}`,
+          kind: 'task',
+          taskId: task.id,
+          title: `任务到期：${task.title}`,
+          body: task.due === ymd(now) ? '今天截止' : `截止 ${formatMonthDay(due)}`,
+          at: at.toISOString(),
+          system: reminderSettings.taskSystem !== false,
+        });
+        break;
+      }
+      if (list.length >= 200) break;
+    }
+  }
+  if (window.Reminders) {
+    const merged = Reminders.applySnoozes(list, state.reminderSnoozes);
+    return Reminders.applyQuiet(merged, state.settings.reminders?.quiet, now);
+  }
   return list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
@@ -4420,6 +4618,11 @@ function showNextEventReminder(force = false) {
     ? `${at.getMonth() + 1}月${at.getDate()}日 ${pad(at.getHours())}:${pad(at.getMinutes())}`
     : '';
   $('#event-reminder-title').textContent = reminder.title || '日程提醒';
+  const kicker = $('#event-reminder-kicker');
+  if (kicker) {
+    const kind = reminder.taskId ? '任务提醒' : '日程提醒';
+    kicker.textContent = reminder.quiet ? `${kind} · 免打扰` : kind;
+  }
   $('#event-reminder-meta').textContent = [reminder.calendar, reminder.body]
     .filter(Boolean)
     .join(' · ');
@@ -4438,22 +4641,37 @@ function enqueueEventReminder(payload) {
   showNextEventReminder(false);
 }
 
-function snoozeEventReminder() {
+function snoozeEventReminder(minutes = 5) {
   const reminder = activeEventReminder;
   if (!reminder) return;
-  const next = {
+  const until = new Date(Date.now() + Math.max(1, Number(minutes) || 5) * 60000);
+  const sourceKey = reminder.key || `${reminder.eventId}:${reminder.occurrenceDate}`;
+  const entry = {
     ...reminder,
-    key: `${reminder.key || reminder.eventId}:snooze:${Date.now()}`,
-    at: new Date(Date.now() + 5 * 60000).toISOString(),
+    key: `${sourceKey}:snooze:${until.getTime()}`,
+    sourceKey,
+    at: until.toISOString(),
+    system: reminder.system === true,
+    snoozedAt: new Date().toISOString(),
   };
+  state.reminderSnoozes = [
+    ...(state.reminderSnoozes || []).filter((item) => item.sourceKey !== sourceKey),
+    entry,
+  ];
+  saveState();
+  syncReminders();
   closeEventReminder();
-  setTimeout(() => enqueueEventReminder(next), 5 * 60000);
-  showToast('5 分钟后再次提醒');
+  showToast(`${Number(minutes) || 5} 分钟后再次提醒`);
 }
 
 function openActiveEventReminder() {
   const reminder = activeEventReminder;
   if (!reminder) return;
+  if (reminder.taskId) {
+    closeEventReminder();
+    openTaskOverlay();
+    return;
+  }
   const event = state.events.find((item) => item.id === reminder.eventId);
   closeEventReminder();
   if (!event) {
@@ -4468,7 +4686,10 @@ function openActiveEventReminder() {
 }
 
 $('#event-reminder-dismiss').addEventListener('click', closeEventReminder);
-$('#event-reminder-snooze').addEventListener('click', snoozeEventReminder);
+eventReminderOverlay.addEventListener('click', (event) => {
+  const snooze = event.target.closest('[data-snooze]');
+  if (snooze) snoozeEventReminder(Number(snooze.dataset.snooze));
+});
 $('#event-reminder-open').addEventListener('click', openActiveEventReminder);
 eventReminderOverlay.addEventListener('mousedown', (event) => {
   if (event.target === eventReminderOverlay) closeEventReminder();
@@ -4557,17 +4778,10 @@ async function init() {
   window.desktop.rendererReady();
   syncReminders();
   clearInterval(clockTimer);
-  clockTimer = setInterval(() => {
-    const nowKey = ymd(new Date());
-    if (nowKey !== currentDayKey) {
-      currentDayKey = nowKey;
-      Plans.checkAutoMilestones(true);
-      showPlanReminders(true);
-      render();
-    } else {
-      updateNowLine();
-    }
-  }, 30000);
+  clockTimer = setInterval(tickUi, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) tickUi();
+  });
 
   setInterval(syncReminders, 5 * 60000);
 
@@ -4625,6 +4839,9 @@ window.__calendarTest = {
   },
   syncReminders() {
     syncReminders();
+  },
+  tickUi() {
+    return tickUi();
   },
   importHolidayData(raw) {
     return applyHolidayData(raw);

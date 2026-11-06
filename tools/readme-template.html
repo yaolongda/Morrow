@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -476,7 +476,7 @@
       </div>
       <div class="feature">
         <h4>完整设置中心</h4>
-        <p>三套主题、字体、强调色、Mica / 亚克力、毛玻璃、背景图片，以及农历、节气、黄历、星座开关。</p>
+        <p>四套主题（含夜色）、字体、强调色、Mica / 亚克力、毛玻璃、背景图片、轻量模式，以及农历、节气、黄历、星座开关。</p>
       </div>
     </div>
     <figure class="figure">
@@ -568,8 +568,9 @@
     <h2>下载与起步</h2>
     <h3>下载安装包</h3>
     <p>前往本仓库的 <strong>Releases</strong> 页面，下载最新的 Windows 安装包：</p>
-    <pre><code>朝暮-Morrow-Setup-1.2.1.exe</code></pre>
+    <pre><code>朝暮-Morrow-Setup-1.2.2.exe</code></pre>
     <p>系统要求 Windows 10 / 11（x64）。默认按当前用户安装，无需管理员权限；会创建桌面与开始菜单快捷方式，可在「设置 → 应用」中卸载。安装包未做代码签名，首次运行若出现 SmartScreen，请选择「更多信息 → 仍要运行」。</p>
+    <p>也可以下载便携版压缩包 <code>朝暮-Morrow-v1.2.2-Portable.zip</code>，解压后运行 <code>朝暮-win32-x64\朝暮.exe</code>，无需安装。</p>
     <div class="split">
       <div>
         <h3>从源码运行</h3>
@@ -583,7 +584,7 @@ npm install</code></pre>
       <div>
         <h3>构建</h3>
         <pre><code>npm run dist
-# dist\朝暮-Morrow-Setup-1.2.1.exe
+# dist\朝暮-Morrow-Setup-1.2.2.exe
 
 npm run build:portable
 # release\朝暮-win32-x64\朝暮.exe</code></pre>
@@ -673,6 +674,7 @@ npm run build:portable
       <li>默认不强制置顶，留在普通窗口后面；点击图钉可固定在其它窗口上方。</li>
       <li>休息日、半天与法定节假日会在小组件中柔和高亮；今日小组件显示农历、节气、上下班倒计时、下一件事与今天剩余的自由时间，并在下班时播放庆祝动画。</li>
       <li>临近下班 1 小时内只有极轻微的呼吸动画；智能排序、呼吸与节奏建议都可在设置中关闭。</li>
+      <li>主页面顶部同样有一条今日节奏条：当前节奏、下一件事与自己的时间，可折叠并在「设置 → 显示」中开关。</li>
       <li>大号小组件单击日期切换下方议程；点击日期或日程会打开主日历对应位置。</li>
     </ul>
     <figure class="figure">
@@ -721,6 +723,26 @@ npm run build:portable
         <h4>数据分片</h4>
         <p>日程超过 2000 条时按年份写入 events/YYYY.json，数据减少后自动合并。</p>
       </div>
+      <div class="feature">
+        <h4>夜色主题</h4>
+        <p>第四套深色主题覆盖主窗口、设置、托盘与四种小组件，日程颜色保持不变。</p>
+      </div>
+      <div class="feature">
+        <h4>后台与启动</h4>
+        <p>小组件内容不变时跳过重绘，主窗口隐藏后暂停 UI 定时器；轻量模式关闭毛玻璃、背景图与庆祝粒子；支持开机自启并静默到托盘。</p>
+      </div>
+      <div class="feature">
+        <h4>提醒增强</h4>
+        <p>免打扰时段（支持跨午夜）、稍后 5 / 10 / 15 分钟且重启后仍生效；任务截止日当天也能提醒。</p>
+      </div>
+      <div class="feature">
+        <h4>每日自动备份</h4>
+        <p>每天首次启动保存一份本地快照，保留 7 份，可在设置中查看与一键恢复。</p>
+      </div>
+      <div class="feature">
+        <h4>安装与卸载</h4>
+        <p>安装包默认安装到 D:\朝暮；卸载时可选纯净卸载，同时删除数据、登录项与相关注册表。</p>
+      </div>
     </div>
   </section>
 
@@ -730,7 +752,7 @@ npm run build:portable
     <div class="feature-grid">
       <div class="feature">
         <h4>外观</h4>
-        <p>经典白 / 暖纸 / 晨雾三套主题；强调色、字体、Windows 11 Mica / 亚克力、面板不透明度与毛玻璃模糊。</p>
+        <p>经典白 / 暖纸 / 晨雾 / 夜色四套主题；强调色、字体、Windows 11 Mica / 亚克力、面板不透明度与毛玻璃模糊。</p>
       </div>
       <div class="feature">
         <h4>背景图片</h4>
@@ -847,7 +869,7 @@ npm run build:portable
   <section class="card" id="notes">
     <p class="kicker">VERIFICATION &amp; LIMITS</p>
     <h2>验证与已知边界</h2>
-    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程三分支编辑、日程提醒与主进程调度、全天折叠、撤销重做、回收站、节假日 JSON 导入、班次模板、批量特殊日期、计划自动进度/归档/自定义里程碑与提醒节点、iCalendar、任务、模板、标签色、周数、历史导航、小组件多开/独立外观、数据分片、小组件结论化/时段节奏/智能排序/双进度/空状态、小组件自由缩放/主题/自适应/庆祝动画、配置导入导出与重启恢复等 <strong>98 项检查</strong>。</p>
+    <p>使用真实 Electron 窗口做自动化验收，覆盖核心日历、周起始日、休息规则、法定节假日、上下班时段与庆祝强度、重复日程三分支编辑、日程提醒与主进程调度、免打扰跨午夜、稍后提醒持久化、任务到期提醒、全天折叠、撤销重做、回收站、节假日 JSON 导入、班次模板、批量特殊日期、计划自动进度/归档/自定义里程碑与提醒节点、iCalendar、任务、模板、标签色、周数、历史导航、小组件多开/独立外观、数据分片、小组件结论化/时段节奏/智能排序/双进度/空状态、小组件自由缩放/主题/自适应/庆祝动画/夜色主题、主页面今日节奏条、四套主题与轻量模式、每日备份与恢复、安装器默认目录与纯净卸载等 <strong>124 项检查</strong>。</p>
     <pre><code>node tools/e2e.js
 node tools/features-test.js
 node tools/widget-restart-test.js</code></pre>

@@ -8,7 +8,7 @@ const params = new URLSearchParams(window.location.search);
 const widgetType = params.get('type') || 'month';
 const widgetId = params.get('id') || '';
 const widgetAppearance = {
-  theme: ['inherit', 'classic', 'paper', 'mist'].includes(params.get('theme'))
+  theme: ['inherit', 'classic', 'paper', 'mist', 'night'].includes(params.get('theme'))
     ? params.get('theme')
     : 'inherit',
   opacity: params.get('opacity') ? Number(params.get('opacity')) : null,
@@ -157,6 +157,9 @@ function normalize(data) {
         breathing: settings.widgets?.breathing !== false,
         suggestions: settings.widgets?.suggestions !== false,
       },
+      performance: {
+        liteMode: settings.performance?.liteMode === true,
+      },
       appearance:
         settings.appearance && typeof settings.appearance === 'object'
           ? settings.appearance
@@ -249,7 +252,24 @@ function upcomingEvents(limit) {
 /* 渲染                                                                */
 /* ------------------------------------------------------------------ */
 
-function render() {
+let renderCount = 0;
+let lastRenderSignature = '';
+
+function render(force = false) {
+  const signature = JSON.stringify([
+    widgetType,
+    ymd(selectedDate),
+    Math.floor(Date.now() / 60000),
+    window.innerWidth,
+    window.innerHeight,
+    locked,
+    pinned,
+    widgetAppearance,
+    state,
+  ]);
+  if (!force && signature === lastRenderSignature) return false;
+  lastRenderSignature = signature;
+  renderCount += 1;
   document.body.dataset.type = widgetType;
   Appearance.applyWidget(state.settings, widgetAppearance);
   Holidays.setCustom(state.settings.holidayData);
@@ -260,6 +280,7 @@ function render() {
   else renderMonth();
   updateMenuLabels();
   updateAppearanceMenu();
+  return true;
 }
 
 function updateSizeClass() {
@@ -1053,7 +1074,7 @@ function stopParticles() {
 setInterval(() => {
   refreshTodayRhythm();
   maybeCelebrate();
-}, 20000);
+}, 30000);
 
 /* ------------------------------------------------------------------ */
 /* 同步与启动                                                          */
@@ -1156,6 +1177,13 @@ init();
 
 /* 开发辅助 */
 window.__widgetTest = {
+  render() {
+    render();
+    return renderCount;
+  },
+  renderCount() {
+    return renderCount;
+  },
   celebrate(kind = 'off') {
     playCelebration({
       kind,

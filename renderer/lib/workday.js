@@ -312,12 +312,40 @@
 
   function greetingFor(now = new Date()) {
     const hour = now.getHours();
-    if (hour >= 5 && hour < 9) return { title: '早上好', detail: '今天也慢慢来。' };
-    if (hour >= 9 && hour < 12) return { title: '上午好', detail: '忙一阵，也记得喝口水。' };
-    if (hour >= 11 && hour < 14) return { title: '中午好', detail: '先好好吃饭，再想别的。' };
-    if (hour >= 14 && hour < 18) return { title: '下午好', detail: '累了就伸个懒腰。' };
-    if (hour >= 18 && hour < 23) return { title: '晚上好', detail: '今天辛苦啦。' };
-    return { title: '夜深了', detail: '早点休息，明天再说。' };
+    if (hour >= 5 && hour < 9) {
+      return {
+        title: '早上好',
+        detail: window.Copy?.greeting('dawn', now) || '今天也慢慢来。',
+      };
+    }
+    if (hour >= 9 && hour < 12) {
+      return {
+        title: '上午好',
+        detail: window.Copy?.greeting('morning', now) || '忙一阵，也记得喝口水。',
+      };
+    }
+    if (hour >= 11 && hour < 14) {
+      return {
+        title: '中午好',
+        detail: window.Copy?.greeting('noon', now) || '先好好吃饭，再想别的。',
+      };
+    }
+    if (hour >= 14 && hour < 18) {
+      return {
+        title: '下午好',
+        detail: window.Copy?.greeting('afternoon', now) || '累了就伸个懒腰。',
+      };
+    }
+    if (hour >= 18 && hour < 23) {
+      return {
+        title: '晚上好',
+        detail: window.Copy?.greeting('evening', now) || '今天辛苦啦。',
+      };
+    }
+    return {
+      title: '夜深了',
+      detail: window.Copy?.greeting('night', now) || '早点休息，明天再说。',
+    };
   }
 
   function poemFor(kind) {

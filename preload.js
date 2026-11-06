@@ -12,6 +12,15 @@ contextBridge.exposeInMainWorld('desktop', {
   loadData: () => ipcRenderer.invoke('store:load'),
   saveData: (data) => ipcRenderer.invoke('store:save', data),
   appInfo: () => ipcRenderer.invoke('app:info'),
+  app: {
+    metrics: () => ipcRenderer.invoke('app:metrics'),
+    setStartup: (startup) => ipcRenderer.invoke('app:set-startup', startup),
+  },
+
+  backups: {
+    list: () => ipcRenderer.invoke('backups:list'),
+    restore: (file) => ipcRenderer.invoke('backups:restore', file),
+  },
   rendererReady: () => ipcRenderer.send('app:renderer-ready'),
   onNavigate: (callback) => subscribe('app:navigate', callback),
   onHidden: (callback) => subscribe('app:hidden', callback),
@@ -35,6 +44,7 @@ contextBridge.exposeInMainWorld('desktop', {
 
   reminders: {
     sync: (list) => ipcRenderer.invoke('reminders:sync', list),
+    peek: () => ipcRenderer.invoke('reminders:peek'),
     onFire: (callback) => subscribe('reminder:fire', callback),
   },
 

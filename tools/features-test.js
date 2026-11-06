@@ -51,7 +51,10 @@ class CDP {
     this.ws.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
       if (message.method === 'Runtime.exceptionThrown') {
-        this.errors.push(message.params.exceptionDetails.text || 'exception');
+        const details = message.params.exceptionDetails || {};
+        this.errors.push(
+          details.exception?.description || details.text || 'exception'
+        );
       }
       if (!message.id) return;
       const pending = this.pending.get(message.id);
@@ -160,8 +163,39 @@ async function main() {
       accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
     })`);
     check('外观主题和强调色生效', appearance.theme === 'paper' && appearance.accent.toLowerCase() === '#34c759', JSON.stringify(appearance));
+
+    await main.evaluate("document.querySelector('.theme-card[data-theme=\"night\"]')?.click()");
+    await sleep(400);
+    const nightState = await main.evaluate(`(() => {
+      const parse = (value) => (String(value).match(/\\d+/g) || []).slice(0, 3).map(Number);
+      const luminance = (rgb) => rgb.length >= 3
+        ? (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+        : 1;
+      return {
+        theme: document.documentElement.dataset.theme,
+        cards: document.querySelectorAll('.theme-card[data-theme]').length,
+        bgLum: luminance(parse(getComputedStyle(document.querySelector('.main-view')).backgroundColor)),
+        textLum: luminance(parse(getComputedStyle(document.body).color)),
+        rhythmBg: getComputedStyle(document.querySelector('#today-rhythm')).backgroundColor
+      };
+    })()`);
+    check(
+      '夜色主题覆盖主界面',
+      nightState.theme === 'night' &&
+        nightState.cards >= 4 &&
+        nightState.bgLum < 0.2 &&
+        nightState.textLum > 0.6,
+      JSON.stringify(nightState)
+    );
+    await main.shot('feature-night-theme.png');
     await main.evaluate("document.querySelector('#settings-close').click()");
+    await sleep(400);
+    await main.shot('feature-night-main.png');
+    await main.evaluate("window.__calendarTest.openSettings('appearance')");
     await sleep(300);
+    await main.evaluate("document.querySelector('.theme-card[data-theme=\"paper\"]').click()");
+    await sleep(300);
+    await main.evaluate("document.querySelector('#settings-close').click()");    await sleep(300);
 
     // 5. 批量创建计划
     const planStart = await main.evaluate(`(() => { const d=new Date(); d.setDate(d.getDate()-10); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })()`);
@@ -422,10 +456,15 @@ async function main() {
       JSON.stringify(workdayChecks)
     );
 
+    // 固定到 2026 年 10 月（国庆节所在月份），避免测试依赖运行当天所在月份是否有法定节假日
+    await main.evaluate("window.__calendarTest.setDate('2026-10-15')");
+    await sleep(300);
     const holidayCells = await main.evaluate(
       "document.querySelectorAll('.month-day.is-holiday').length"
     );
     check('月视图标出法定节假日', holidayCells > 0, `holiday cells=${holidayCells}`);
+    await main.evaluate(`window.__calendarTest.setDate(${JSON.stringify(todayKey)})`);
+    await sleep(200);
 
     await main.evaluate("window.__calendarTest.openSettings('schedule')");
     await sleep(300);
@@ -1409,6 +1448,20 @@ async function main() {
     const todayWidget = await new CDP(todayTarget.webSocketDebuggerUrl).connect();
     await waitFor(() => todayWidget.evaluate('Boolean(window.__widgetTest)'));
     await sleep(500);
+    const widgetRenderPerf = await todayWidget.evaluate(`(() => {
+      const before = window.__widgetTest.renderCount();
+      window.__widgetTest.render();
+      const after = window.__widgetTest.renderCount();
+      window.__widgetTest.render();
+      const again = window.__widgetTest.renderCount();
+      return { before, after, again };
+    })()`);
+    check(
+      '小组件重复渲染会跳过',
+      widgetRenderPerf.again === widgetRenderPerf.after,
+      JSON.stringify(widgetRenderPerf)
+    );
+
     const todayWidgetState = await todayWidget.evaluate(`(() => {
       const stats = window.__widgetTest.stats();
       const insight = window.__widgetTest.insight();
@@ -1466,6 +1519,27 @@ async function main() {
         theme: todayBase.theme,
         workline: todayBase.workline
       })
+    );
+
+    await todayWidget.evaluate(
+      "window.desktop.widget.setAppearance({ theme: 'night' })"
+    );
+    await sleep(450);
+    const nightWidget = await todayWidget.evaluate(`({
+      theme: document.documentElement.dataset.theme,
+      headline: document.querySelector('.w-rhythm-headline')?.textContent?.trim() || '',
+      hasNightOption: Boolean(document.querySelector('#menu-theme option[value="night"]'))
+    })`);
+    await todayWidget.evaluate(
+      "window.desktop.widget.setAppearance({ theme: 'inherit' })"
+    );
+    await sleep(300);
+    check(
+      '小组件支持夜色主题',
+      nightWidget.theme === 'night' &&
+        nightWidget.headline.length > 0 &&
+        nightWidget.hasNightOption,
+      JSON.stringify(nightWidget)
     );
 
     await todayWidget.evaluate("window.desktop.widget.setSize(760, 420)");
@@ -1716,6 +1790,379 @@ async function main() {
     agendaWidget.close();
     await sleep(400);
 
+    // 13.5 主页面今日节奏条
+    await main.evaluate("document.querySelector('#widget-close')?.click()");
+    await sleep(350);
+    const rhythmState = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const snap = window.Insight.today(state, new Date());
+      const el = document.querySelector('#today-rhythm');
+      const stable = (value) => String(value || '').split(' · ')[0];
+      return {
+        exists: Boolean(el),
+        visible: Boolean(el) && !el.classList.contains('hidden'),
+        expanded: Boolean(el) && !el.classList.contains('is-collapsed'),
+        headline: el?.querySelector('.tr-headline')?.textContent?.trim() || '',
+        next: stable(el?.querySelector('.tr-next-text')?.textContent?.trim()),
+        suggestion: el?.querySelector('.tr-suggestion')?.textContent?.trim() || '',
+        expectedHeadline: snap.headline,
+        expectedNext: stable(snap.nextLine),
+        expectedSuggestion: snap.suggestion
+      };
+    })()`);
+    check(
+      '主页面今日节奏条复用 Insight 结论',
+      rhythmState.exists &&
+        rhythmState.visible &&
+        rhythmState.expanded &&
+        rhythmState.headline === rhythmState.expectedHeadline &&
+        rhythmState.next === rhythmState.expectedNext &&
+        (!rhythmState.expectedSuggestion || rhythmState.suggestion.includes(rhythmState.expectedSuggestion)),
+      JSON.stringify(rhythmState)
+    );
+    await main.shot('feature-today-rhythm.png');
+
+    const copyState = await main.evaluate(`(() => {
+      if (!window.Copy) return { exists: false };
+      const day = new Date(2026, 10, 7);
+      const first = window.Copy.suggestion('rest', day);
+      const second = window.Copy.suggestion('rest', day);
+      const week = new Set();
+      for (let index = 0; index < 7; index += 1) {
+        week.add(window.Copy.suggestion('rest', new Date(2026, 10, 7 + index)));
+      }
+      const snap = window.Insight.today(window.__app.getState(), new Date());
+      return {
+        exists: true,
+        stable: first === second && first.length > 0,
+        variety: week.size,
+        insightSuggestion: snap.suggestion,
+        pool: window.Copy.pool('suggestion:rest').length
+      };
+    })()`);
+    check(
+      '文案池按日期稳定轮换',
+      copyState.exists &&
+        copyState.stable &&
+        copyState.variety >= 2 &&
+        copyState.pool >= 3 &&
+        (!copyState.insightSuggestion ||
+          copyState.insightSuggestion.length > 0),
+      JSON.stringify(copyState)
+    );
+
+    const perfSurface = await main.evaluate(`(() => ({
+      hasMetrics: Boolean(window.desktop.app && window.desktop.app.metrics),
+      hasTick: typeof window.__calendarTest.tickUi === 'function'
+    }))()`);
+    check(
+      '性能接口可用',
+      perfSurface.hasMetrics && perfSurface.hasTick,
+      JSON.stringify(perfSurface)
+    );
+
+    const metrics = await main.evaluate(`window.desktop.app.metrics()`);
+    check(
+      '可以读取进程资源指标',
+      Array.isArray(metrics) &&
+        metrics.length > 0 &&
+        metrics.some((item) => item.type === 'Browser' && item.workingSetSize > 0),
+      JSON.stringify(metrics.slice(0, 3))
+    );
+
+    const tickResult = await main.evaluate(`(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      const hiddenResult = window.__calendarTest.tickUi();
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      const visibleResult = window.__calendarTest.tickUi();
+      return { hiddenResult, visibleResult };
+    })()`);
+    check(
+      '主窗口隐藏时暂停 UI 定时器',
+      tickResult.hiddenResult === false && tickResult.visibleResult === true,
+      JSON.stringify(tickResult)
+    );
+
+    await main.evaluate("window.__calendarTest.openSettings('appearance')");
+    await sleep(300);
+    const liteToggle = await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="performance.liteMode"]');
+      if (!input) return { exists: false };
+      if (!input.checked) input.click();
+      return { exists: true };
+    })()`);
+    await sleep(350);
+    const liteState = await main.evaluate(`({
+      classOn: document.body.classList.contains('lite-mode'),
+      setting: window.__app.getState().settings.performance?.liteMode
+    })`);
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="performance.liteMode"]');
+      if (input && input.checked) input.click();
+    })()`);
+    await sleep(250);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    check(
+      '轻量模式可以关闭视觉效果',
+      liteToggle.exists && liteState.classOn && liteState.setting === true,
+      JSON.stringify({ ...liteToggle, ...liteState })
+    );
+
+    await main.evaluate("window.__calendarTest.openSettings('general')");
+    await sleep(300);
+    const startupSurface = await main.evaluate(`({
+      hasOpenAtLogin: Boolean(document.querySelector('input[data-path="startup.openAtLogin"]')),
+      hasMinimized: Boolean(document.querySelector('input[data-path="startup.minimized"]')),
+      hasIpc: Boolean(window.desktop.app && window.desktop.app.setStartup)
+    })`);
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="startup.openAtLogin"]');
+      if (input && !input.checked) input.click();
+    })()`);
+    await sleep(350);
+    const startupState = await main.evaluate(`(async () => ({
+      openAtLogin: window.__app.getState().settings.startup?.openAtLogin,
+      minimized: window.__app.getState().settings.startup?.minimized,
+      ipcResult: await window.desktop.app
+        .setStartup({ openAtLogin: true, minimized: true })
+        .catch((error) => 'error:' + error.message)
+    }))()`);
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="startup.openAtLogin"]');
+      if (input && input.checked) input.click();
+    })()`);
+    await sleep(250);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    check(
+      '开机自启开关与主进程联动',
+      startupSurface.hasOpenAtLogin &&
+        startupSurface.hasMinimized &&
+        startupSurface.hasIpc &&
+        startupState.openAtLogin === true &&
+        startupState.minimized === true &&
+        typeof startupState.ipcResult === 'boolean',
+      JSON.stringify({ ...startupSurface, ...startupState })
+    );
+
+    await main.evaluate("window.__calendarTest.openSettings('general')");
+    await sleep(600);
+    const backupSurface = await main.evaluate(`({
+      hasList: Boolean(document.querySelector('#backup-list')),
+      rows: document.querySelectorAll('.backup-row').length,
+      hasIpc: Boolean(window.desktop.backups && window.desktop.backups.restore),
+      file: document.querySelector('[data-backup-restore]')?.dataset.backupRestore || ''
+    })`);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    check(
+      '每日自动备份可列出',
+      backupSurface.hasList &&
+        backupSurface.hasIpc &&
+        backupSurface.rows >= 1 &&
+        /^\d{4}-\d{2}-\d{2}\.json$/.test(backupSurface.file),
+      JSON.stringify(backupSurface)
+    );
+
+    const quietState = await main.evaluate(`(() => {
+      const quiet = { enabled: true, start: '22:00', end: '08:00' };
+      return {
+        late: window.Reminders.inQuietHours(new Date(2026, 10, 6, 23, 30), quiet),
+        early: window.Reminders.inQuietHours(new Date(2026, 10, 7, 7, 30), quiet),
+        noon: window.Reminders.inQuietHours(new Date(2026, 10, 6, 12, 0), quiet),
+        boundary: window.Reminders.inQuietHours(new Date(2026, 10, 7, 8, 0), quiet),
+        disabled: window.Reminders.inQuietHours(new Date(2026, 10, 6, 23, 30), {
+          enabled: false, start: '22:00', end: '08:00'
+        })
+      };
+    })()`);
+    check(
+      '免打扰时段支持跨午夜',
+      quietState.late === true &&
+        quietState.early === true &&
+        quietState.noon === false &&
+        quietState.boundary === false &&
+        quietState.disabled === false,
+      JSON.stringify(quietState)
+    );
+
+    await main.evaluate(`window.__calendarTest.fireEventReminder({
+      key: 'snooze-test',
+      eventId: 'snooze-test',
+      title: '稍后提醒验证',
+      body: '10:00 – 11:00',
+      at: new Date().toISOString(),
+      system: false
+    })`);
+    await sleep(350);
+    const snoozeVisible = await main.evaluate(
+      "!document.querySelector('#event-reminder-overlay').classList.contains('hidden') && document.querySelectorAll('[data-snooze]').length >= 3"
+    );
+    await main.evaluate("document.querySelector('[data-snooze=\"10\"]').click()");
+    await sleep(400);
+    const snoozeState = await main.evaluate(`(() => {
+      const snoozes = window.__app.getState().reminderSnoozes || [];
+      const collected = window.__calendarTest.collectReminders();
+      return {
+        stored: snoozes.length,
+        minutes: snoozes[0] ? Math.round((Date.parse(snoozes[0].at) - Date.now()) / 60000) : 0,
+        scheduled: collected.some((item) => item.snoozed === true && item.title === '稍后提醒验证'),
+        overlayHidden: document.querySelector('#event-reminder-overlay').classList.contains('hidden')
+      };
+    })()`);
+    await main.evaluate("window.__app.getState().reminderSnoozes = []; window.__app.saveState()");
+    check(
+      '稍后提醒会持久化并重新调度',
+      snoozeVisible &&
+        snoozeState.stored === 1 &&
+        snoozeState.minutes >= 9 &&
+        snoozeState.minutes <= 10 &&
+        snoozeState.scheduled &&
+        snoozeState.overlayHidden,
+      JSON.stringify({ snoozeVisible, ...snoozeState })
+    );
+
+    const taskReminderState = await main.evaluate(`(() => {
+      const now = new Date();
+      const time = [now.getHours(), now.getMinutes()]
+        .map((value) => String(value).padStart(2, '0'))
+        .join(':');
+      const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+        .map((value, index) => (index ? String(value).padStart(2, '0') : value))
+        .join('-');
+      const state = window.__app.getState();
+      state.settings.reminders.taskTime = time;
+      state.settings.reminders.taskReminder = true;
+      state.settings.reminders.taskSystem = true;
+      const task = window.__calendarTest.addTask('任务提醒验证', today);
+      const item = window.__calendarTest
+        .collectReminders()
+        .find((entry) => entry.kind === 'task' && entry.taskId === task.id);
+      task.done = true;
+      const afterDone = window.__calendarTest
+        .collectReminders()
+        .find((entry) => entry.kind === 'task' && entry.taskId === task.id);
+      state.tasks = state.tasks.filter((entry) => entry.id !== task.id);
+      state.settings.reminders.taskTime = '09:00';
+      window.__app.saveState();
+      return {
+        found: Boolean(item),
+        title: item?.title || '',
+        system: item?.system,
+        afterDone: Boolean(afterDone)
+      };
+    })()`);
+    check(
+      '任务到期提醒可生成并排除已完成',
+      taskReminderState.found &&
+        taskReminderState.title.includes('任务提醒验证') &&
+        taskReminderState.system === true &&
+        taskReminderState.afterDone === false,
+      JSON.stringify(taskReminderState)
+    );
+
+    const mainReminderState = await main.evaluate(`(async () => {
+      await window.desktop.reminders.sync([{
+        key: 'task-main-sync',
+        kind: 'task',
+        taskId: 'task-main-1',
+        title: '任务主进程验证',
+        body: '今天截止',
+        calendar: '工作',
+        quiet: true,
+        at: new Date(Date.now() + 60000).toISOString(),
+        system: false
+      }]);
+      const peek = await window.desktop.reminders.peek();
+      window.__calendarTest.syncReminders();
+      return peek;
+    })()`);
+    check(
+      '主进程接受任务提醒并保留免打扰标记',
+      mainReminderState.length === 1 &&
+        mainReminderState[0].taskId === 'task-main-1' &&
+        mainReminderState[0].kind === 'task' &&
+        mainReminderState[0].quiet === true &&
+        mainReminderState[0].calendar === '工作',
+      JSON.stringify(mainReminderState)
+    );
+
+    const restInsight = await main.evaluate(`(() => {
+      const state = window.__app.getState();
+      const saturday = new Date(2026, 10, 7, 9, 0);
+      const schedule = {
+        preset: 'double', restWeekdays: [0, 6], halfWeekdays: [],
+        alternate: null, cycle: null, overrides: {}, followHolidays: false
+      };
+      const weekendEvent = {
+        id: 'rest-day-event', calendarId: state.calendars[0]?.id, title: '周末聚会',
+        start: '2026-11-07T10:30', end: '2026-11-07T11:30', allDay: false,
+        location: '', notes: '', recurrence: null, reminder: null
+      };
+      const snap = window.Insight.today({
+        ...state,
+        events: [...state.events, weekendEvent],
+        settings: { ...state.settings, schedule, weekStart: 1 }
+      }, saturday);
+      return {
+        headline: snap.headline,
+        detail: snap.detail,
+        nextLine: snap.nextLine,
+        status: snap.status?.state || null,
+        freeMinutes: snap.free.minutes
+      };
+    })()`);
+    check(
+      '休息日不会把当天算成上班节奏',
+      restInsight.headline === '今天休息' &&
+        restInsight.status === 'rest' &&
+        !restInsight.nextLine.includes('今天') &&
+        restInsight.detail.includes('周末聚会') &&
+        !restInsight.detail.includes('上班') &&
+        restInsight.freeMinutes >= 600,
+      JSON.stringify(restInsight)
+    );
+
+    await main.evaluate("document.querySelector('#today-rhythm .tr-toggle').click()");
+    await sleep(300);
+    const collapsedRhythm = await main.evaluate(`({
+      collapsed: document.querySelector('#today-rhythm').classList.contains('is-collapsed'),
+      setting: window.__app.getState().settings.display.todayRhythm
+    })`);
+    check(
+      '今日节奏条可以折叠并记住状态',
+      collapsedRhythm.collapsed && collapsedRhythm.setting === false,
+      JSON.stringify(collapsedRhythm)
+    );
+    await main.evaluate("document.querySelector('#today-rhythm .tr-toggle').click()");
+    await sleep(250);
+    const expandedAgain = await main.evaluate(
+      "!document.querySelector('#today-rhythm').classList.contains('is-collapsed')"
+    );
+
+    await main.evaluate("window.__calendarTest.openSettings('display')");
+    await sleep(300);
+    const hasRhythmSetting = await main.evaluate(
+      "Boolean(document.querySelector('input[data-path=\"display.todayRhythm\"]'))"
+    );
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="display.todayRhythm"]');
+      if (input && input.checked) input.click();
+    })()`);
+    await sleep(300);
+    const collapsedBySetting = await main.evaluate(
+      "document.querySelector('#today-rhythm').classList.contains('is-collapsed')"
+    );
+    await main.evaluate(`(() => {
+      const input = document.querySelector('input[data-path="display.todayRhythm"]');
+      if (input && !input.checked) input.click();
+    })()`);
+    await sleep(300);
+    await main.evaluate("document.querySelector('#settings-close').click()");
+    check(
+      '设置中心可以控制今日节奏条',
+      hasRhythmSetting && expandedAgain && collapsedBySetting,
+      JSON.stringify({ hasRhythmSetting, expandedAgain, collapsedBySetting })
+    );
+
     // 14. 显示农历、宜忌、星座
     await main.evaluate("document.querySelector('#widget-close').click(); window.__calendarTest.openSettings('display')");
     await sleep(300);
@@ -1797,6 +2244,29 @@ async function main() {
       '数据减少后分片会自动清理',
       compactStore.events.length > 0 && !fs.existsSync(shardDir),
       JSON.stringify({ mainEvents: compactStore.events.length, shards: fs.existsSync(shardDir) })
+    );
+
+    try {
+      await main.evaluate(
+        `window.desktop.backups.restore(${JSON.stringify(backupSurface.file)})`
+      );
+    } catch {
+      // 恢复会触发页面重载，执行上下文可能先被销毁
+    }
+    await sleep(2500);
+    await waitFor(() => main.evaluate('Boolean(window.__calendarTest && window.__app)'));
+    const backupRestoredState = await main.evaluate(`({
+      events: window.__app.getState().events.length,
+      shards: document.querySelectorAll('.month-day').length
+    })`);
+    const backupAfterRestore = await main.evaluate("window.desktop.backups.list()");
+    check(
+      '备份可以恢复数据',
+      backupRestoredState.events > 0 &&
+        backupRestoredState.events < 100 &&
+        backupRestoredState.shards === 42 &&
+        backupAfterRestore.some((item) => item.file === 'pre-restore.json'),
+      JSON.stringify({ ...backupRestoredState, files: backupAfterRestore.map((item) => item.file) })
     );
 
     console.log('errors:', JSON.stringify([...(main.errors || []), ...(widget.errors || [])]));

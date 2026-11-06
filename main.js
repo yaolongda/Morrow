@@ -25,6 +25,23 @@ const TEST_HOLIDAY_IMPORT = process.env.CALENDAR_TEST_HOLIDAY_IMPORT || null;
 const TEST_ICS_IMPORT = process.env.CALENDAR_TEST_ICS_IMPORT || null;
 const TEST_ICS_EXPORT = process.env.CALENDAR_TEST_ICS_EXPORT || null;
 const TEST_CAPTURE = process.env.CALENDAR_TEST_CAPTURE || null;
+const START_HIDDEN = process.argv.includes('--hidden');
+
+function applyStartupSettings(startup) {
+  if (!app.isPackaged) return false;
+  const openAtLogin = startup?.openAtLogin === true;
+  const minimized = startup?.minimized !== false;
+  try {
+    app.setLoginItemSettings({
+      openAtLogin,
+      path: process.execPath,
+      args: openAtLogin && minimized ? ['--hidden'] : [],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const WIDGET_SIZES = {
   month: { width: 360, height: 388 },
@@ -51,6 +68,7 @@ let storePath = null;
 let widgetsPath = null;
 let windowStatePath = null;
 let shardDir = null;
+let backupsDir = null;
 const SHARD_THRESHOLD = 2000;
 
 let widgetConfigs = [];
@@ -167,8 +185,102 @@ function saveStoreData(data) {
   }
 }
 
-function ensureStore() {
-  const data = readJSON(storePath, null);
+function createDailyBackup() {
+  if (!backupsDir) return null;
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
+  const file = path.join(backupsDir, `${key}.json`);
+  if (fs.existsSync(file)) return file;
+  const data = loadStoreData();
+  if (!data || typeof data !== 'object') return null;
+  try {
+    fs.mkdirSync(backupsDir, { recursive: true });
+    writeJSON(file, {
+      createdAt: new Date().toISOString(),
+      version: data.version || 0,
+      data,
+    });
+    const files = fs
+      .readdirSync(backupsDir)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}\.json$/.test(name))
+      .sort();
+    while (files.length > 7) {
+      fs.rmSync(path.join(backupsDir, files.shift()), { force: true });
+    }
+    return file;
+  } catch {
+    return null;
+  }
+}
+
+function listBackups() {
+  if (!backupsDir || !fs.existsSync(backupsDir)) return [];
+  try {
+    return fs
+      .readdirSync(backupsDir)
+      .filter(
+        (name) =>
+          /^\d{4}-\d{2}-\d{2}\.json$/.test(name) || name === 'pre-restore.json'
+      )
+      .sort()
+      .reverse()
+      .map((name) => {
+        const stat = fs.statSync(path.join(backupsDir, name));
+        return {
+          file: name,
+          date:
+            name === 'pre-restore.json'
+              ? '恢复前快照'
+              : name.replace(/\.json$/, ''),
+          size: stat.size,
+          mtime: stat.mtime.toISOString(),
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+function restoreBackup(fileName) {
+  if (!backupsDir) return { ok: false, error: '备份目录不可用' };
+  const safe = path.basename(String(fileName || ''));
+  if (!/^\d{4}-\d{2}-\d{2}\.json$/.test(safe) && safe !== 'pre-restore.json') {
+    return { ok: false, error: '无效的备份文件' };
+  }
+  const full = path.join(backupsDir, safe);
+  const payload = readJSON(full, null);
+  if (!payload || typeof payload !== 'object' || !payload.data || typeof payload.data !== 'object') {
+    return { ok: false, error: '备份文件损坏或格式不正确' };
+  }
+  if (!Array.isArray(payload.data.calendars) || !Array.isArray(payload.data.events)) {
+    return { ok: false, error: '备份缺少日历或日程数据，已取消恢复' };
+  }
+  try {
+    const current = loadStoreData();
+    if (current) {
+      writeJSON(path.join(backupsDir, 'pre-restore.json'), {
+        createdAt: new Date().toISOString(),
+        version: current.version || 0,
+        data: current,
+      });
+    }
+    saveStoreData(payload.data);
+    reminderSchedule = [];
+    firedReminderKeys.clear();
+    const restored = loadStoreData();
+    broadcastStore(restored);
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+    }, 200);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message || '恢复失败' };
+  }
+}
+
+function ensureStore() {  const data = readJSON(storePath, null);
   const valid =
     data &&
     Array.isArray(data.calendars) &&
@@ -471,7 +583,7 @@ function addWidget(type, options = {}) {
     height: options.height ?? WIDGET_SIZES[type].height,
     pin: Boolean(options.pin),
     locked: Boolean(options.locked),
-    theme: ['inherit', 'classic', 'paper', 'mist'].includes(options.theme)
+    theme: ['inherit', 'classic', 'paper', 'mist', 'night'].includes(options.theme)
       ? options.theme
       : 'inherit',
     opacity:
@@ -525,7 +637,7 @@ function importWidgets(configs) {
         : WIDGET_SIZES[item.type].height,
       pin: Boolean(item.pin),
       locked: Boolean(item.locked),
-      theme: ['inherit', 'classic', 'paper', 'mist'].includes(item.theme)
+      theme: ['inherit', 'classic', 'paper', 'mist', 'night'].includes(item.theme)
         ? item.theme
         : 'inherit',
       opacity:
@@ -620,7 +732,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    if (!START_HIDDEN) mainWindow.show();
     if (SMOKE) runSmokeTest();
   });
 
@@ -793,16 +905,25 @@ function cleanReminderList(list) {
   const result = [];
   for (const item of list) {
     if (!item || typeof item !== 'object') continue;
-    if (typeof item.eventId !== 'string' || typeof item.at !== 'string') continue;
+    const eventId = typeof item.eventId === 'string' && item.eventId ? item.eventId : '';
+    const taskId = typeof item.taskId === 'string' && item.taskId ? item.taskId : '';
+    if ((!eventId && !taskId) || typeof item.at !== 'string') continue;
     const at = Date.parse(item.at);
     if (!Number.isFinite(at)) continue;
     result.push({
-      key: typeof item.key === 'string' ? item.key.slice(0, 200) : `${item.eventId}:${item.at}`,
-      eventId: item.eventId.slice(0, 120),
+      key:
+        typeof item.key === 'string'
+          ? item.key.slice(0, 200)
+          : `${eventId || taskId}:${item.at}`,
+      eventId: eventId ? eventId.slice(0, 120) : undefined,
+      taskId: taskId ? taskId.slice(0, 120) : undefined,
+      kind: item.kind === 'task' || taskId ? 'task' : 'event',
       occurrenceDate:
         typeof item.occurrenceDate === 'string' ? item.occurrenceDate.slice(0, 10) : '',
       title: typeof item.title === 'string' ? item.title.slice(0, 200) : '日程提醒',
       body: typeof item.body === 'string' ? item.body.slice(0, 500) : '',
+      calendar: typeof item.calendar === 'string' ? item.calendar.slice(0, 80) : '',
+      quiet: item.quiet === true,
       at: new Date(at).toISOString(),
       system: item.system === true,
     });
@@ -823,10 +944,14 @@ function fireReminder(reminder) {
         silent: false,
       });
       notification.on('click', () => {
-        showMainWindow({
-          eventId: reminder.eventId,
-          occurrenceDate: reminder.occurrenceDate,
-        });
+        showMainWindow(
+          reminder.taskId
+            ? { taskId: reminder.taskId }
+            : {
+                eventId: reminder.eventId,
+                occurrenceDate: reminder.occurrenceDate,
+              }
+        );
       });
       notification.show();
     } catch {
@@ -860,6 +985,23 @@ function checkReminders() {
 function registerIpc() {
   ipcMain.handle('store:load', () => loadStoreData());
 
+  ipcMain.handle('app:metrics', () =>
+    app.getAppMetrics().map((metric) => ({
+      pid: metric.pid,
+      type: metric.type,
+      workingSetSize: metric.memory?.workingSetSize || 0,
+      peakWorkingSetSize: metric.memory?.peakWorkingSetSize || 0,
+      cpu: metric.cpu?.percentCPUUsage || 0,
+    }))
+  );
+
+  ipcMain.handle('app:set-startup', (_event, startup) =>
+    applyStartupSettings(startup)
+  );
+
+  ipcMain.handle('backups:list', () => listBackups());
+  ipcMain.handle('backups:restore', (_event, file) => restoreBackup(file));
+
   ipcMain.handle('store:save', (_event, data) => {
     if (!data || typeof data !== 'object') return false;
     saveStoreData(data);
@@ -871,6 +1013,8 @@ function registerIpc() {
     reminderSchedule = cleanReminderList(list);
     return reminderSchedule.length;
   });
+
+  ipcMain.handle('reminders:peek', () => reminderSchedule.slice(0, 5));
 
   ipcMain.handle('tray:preview', () => {
     showTrayPreview();
@@ -1155,7 +1299,7 @@ function registerIpc() {
     if (!win) return null;
     const config = widgetConfigs.find((item) => item.id === win.__widgetId);
     if (!config) return null;
-    config.theme = ['inherit', 'classic', 'paper', 'mist'].includes(appearance.theme)
+    config.theme = ['inherit', 'classic', 'paper', 'mist', 'night'].includes(appearance.theme)
       ? appearance.theme
       : 'inherit';
     config.opacity =
@@ -1337,11 +1481,15 @@ if (!gotLock) {
     widgetsPath = path.join(app.getPath('userData'), 'widgets.json');
     windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
     shardDir = path.join(app.getPath('userData'), 'events');
+    backupsDir = path.join(app.getPath('userData'), 'backups');
 
     Menu.setApplicationMenu(null);
     app.setAppUserModelId('com.yaolongda.morrow');
     migrateLegacyData();
     ensureStore();
+
+    applyStartupSettings(loadStoreData()?.settings?.startup);
+    createDailyBackup();
 
     widgetConfigs = loadWidgetConfigs();
     registerIpc();
@@ -1372,3 +1520,4 @@ if (!gotLock) {
     if (process.platform !== 'darwin') app.quit();
   });
 }
+
